@@ -71,6 +71,11 @@ float map(float value, float min1, float max1, float min2, float max2) {
     return min2 + (value - min1) * (max2 - min2) / (max1 - min1);
 }
 
+float InterleavedGradientNoise(in vec2 position_screen) {
+  vec3 magic = vec3(0.06711056f, 0.00583715f, 52.9829189f);
+  return fract(magic.z * fract(dot(position_screen, magic.xy)));
+}
+
 float compute_shadow_with_poisson_filtering(in float cosTheta) {
     float bias = 0.005*tan(acos(cosTheta));
     bias = clamp(bias, 0, 0.015);
@@ -91,9 +96,10 @@ float compute_shadow_with_poisson_filtering(in float cosTheta) {
         //  - A random sample, based on the pixel's position in world space.
         //    The position is rounded to the millimeter to avoid too much aliasing
         int index = int(float(nb_poissonDisk_samples)*random(floor(v_vert.xyz*1000.0), i)) % nb_poissonDisk_samples ;
+//        int index = int(float(nb_poissonDisk_samples)*InterleavedGradientNoise(gl_FragCoord.xy)) % nb_poissonDisk_samples ;
 
         vec2 ShadowCoord_LightView = ShadowCoord.xy/ShadowCoord.w;
-        ShadowCoord_LightView += poissonDisk[index]/800.0;
+        ShadowCoord_LightView += poissonDisk[index]/1024.0;
         float z_from_light = texture(shadowMap, ShadowCoord_LightView).r;
         float z_from_cam = (ShadowCoord.z - bias) / ShadowCoord.w;
         float is_texel_shadowed = (z_from_cam >=  z_from_light ? 1.0: 0.0);
