@@ -19,7 +19,7 @@ class ShadowMapping(CameraWindow):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.camera.projection.update(near=1, far=200)
+        self.camera.projection.update(near=1, far=100)
         self.wnd.mouse_exclusivity = True
 
         # Offscreen buffer
@@ -47,7 +47,8 @@ class ShadowMapping(CameraWindow):
 
         # Programs
         self.raw_depth_prog = self.load_program('programs/shadow_mapping/raw_depth.glsl')
-        self.basic_light = self.load_program('programs/shadow_mapping/directional_light.glsl')
+        # self.basic_light = self.load_program('programs/shadow_mapping/directional_light.glsl')
+        self.basic_light = self.load_program('programs/shadow_mapping/directional_light_dithering_jitters.glsl')
         self.basic_light['shadowMap'].value = 0
         self.basic_light['color'].value = 1.0, 1.0, 1.0, 1.0
         self.shadowmap_program = self.load_program('programs/shadow_mapping/shadowmap.glsl')
