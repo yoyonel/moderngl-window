@@ -54,7 +54,7 @@ class Window(BaseWindow):
 
         # Create the OpenGL widget
         self._widget = QtOpenGL.QGLWidget(gl)
-        self.title = self._title
+        self.title = self._tihttps://mypy-lang.org/tle
 
         # If fullscreen we change the window to match the desktop on the primary screen
         if self.fullscreen:

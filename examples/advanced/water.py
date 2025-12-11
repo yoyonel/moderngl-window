@@ -112,7 +112,7 @@ class Water(moderngl_window.WindowConfig):
         self.mouse_pos = xx, yy
 
     def on_mouse_drag_event(self, x, y, dx, dy):
-        self.mouse_position_event(x, y, dx, dy)
+        self.on_mouse_position_event(x, y, dx, dy)
 
     def on_key_event(self, key, action, modifiers):
         keys = self.wnd.keys
