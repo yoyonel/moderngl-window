@@ -13,6 +13,8 @@ layout(binding=1, rgba16f) restrict writeonly uniform imageCube prefilteredEnvMa
 
 layout(location=0) uniform float roughnessValue;
 
+layout(local_size_x=32, local_size_y=32, local_size_z=1) in;
+
 #define CURRENT_MIP_LEVEL     0
 #define ROUGHNESS roughnessValue
 
@@ -80,7 +82,6 @@ vec3 tangentToWorld(const vec3 v, const vec3 N, const vec3 S, const vec3 T)
     return S * v.x + T * v.y + N * v.z;
 }
 
-layout(local_size_x=32, local_size_y=32, local_size_z=1) in;
 void main(void)
 {
     ivec2 outputSize = imageSize(prefilteredEnvMap[CURRENT_MIP_LEVEL]);
@@ -111,7 +112,11 @@ void main(void)
 
             float cosHalfVector = max(dot(normal, halfVector), 0.0);
 
-            float pdf = ndfGGX(cosHalfVector, ROUGHNESS) * 0.25;
+//            float pdf = ndfGGX(cosHalfVector, ROUGHNESS) * 0.25;
+            // PDF correcte pour GGX importance sampling
+            float NoH = max(dot(normal, halfVector), 0.0);
+            float VoH = max(dot(viewDir, halfVector), 0.0);
+            float pdf = (ndfGGX(NoH, ROUGHNESS) * NoH) / (4.0 * VoH + 1e-5);
 
             float ws = 1.0 / (SAMPLE_COUNT * pdf);
 

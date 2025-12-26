@@ -83,8 +83,7 @@ vec3 importanceSampleGGX(vec2 Xi, vec3 N, float roughness)
         Inversion of the GGX NDF CDF.
         This produces a distribution of half-vectors matching GGX.
     */
-    float cosTheta = sqrt((1.0 - Xi.y) /
-                          (1.0 + (alpha - 1.0) * Xi.y));
+    float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (alpha * alpha - 1.0) * Xi.y));
     float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
 
     // Half-vector in tangent space

@@ -6,10 +6,10 @@ const float TwoPI = 2 * PI;
 
 // Sampler for the equirectangular input texture.
 layout(binding=0) uniform sampler2D equirectangularTexture;
-
 // https://www.khronos.org/opengl/wiki/Layout_Qualifier_(GLSL)
 // Image cube to store the output from the conversion.
-layout(binding=0, rgba16f) restrict writeonly uniform imageCube cubeMapTexture;
+layout(binding=1, rgba16f) restrict writeonly uniform imageCube cubeMapTexture;
+layout(local_size_x=32, local_size_y=32, local_size_z=1) in;
 
 // Calculate normalized sampling direction vector based on current fragment coordinates (gl_GlobalInvocationID.xyz)
 vec3 calculateSamplingVector()
@@ -30,19 +30,23 @@ vec3 calculateSamplingVector()
     return normalize(directionVector);
 }
 
-layout(local_size_x=32, local_size_y=32, local_size_z=1) in;
 void main(void)
 {
     // Get the sampling direction vector based on the current fragment.
     vec3 sampleDirection = calculateSamplingVector();
 
     // Convert the Cartesian direction vector to spherical coordinates.
-    float phi   = atan(sampleDirection.z, sampleDirection.x);
-    float theta = acos(sampleDirection.y);
+    float phi   = atan(sampleDirection.z, sampleDirection.x); // [-π, +π]
+    float u = phi / TwoPI + 0.5; // [0, 1]
+    float theta = acos(clamp(sampleDirection.y, -1.0, 1.0));
+    float v = theta / PI;
 
     // Sample the equirectangular texture based on the calculated spherical coordinates.
-    vec4 sampledColor = texture(equirectangularTexture, vec2(phi / TwoPI, theta / PI));
-
+    vec3 sampledColor = textureLod(
+        equirectangularTexture,
+        vec2(u, v),
+        0.0
+    ).rgb;
     // Write the sampled color to the output cubemap.
     imageStore(cubeMapTexture, ivec3(gl_GlobalInvocationID), vec4(sampledColor.rgb, 1));
 }

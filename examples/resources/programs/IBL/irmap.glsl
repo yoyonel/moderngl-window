@@ -9,7 +9,7 @@ const float EPSILON = 0.0;
 
 // Texture layout
 layout(binding=0) uniform samplerCube envMap;              // Input environment map (cubemap)
-layout(binding=0, rgba16f) restrict writeonly uniform imageCube irradianceMap;  // Output irradiance map (cubemap)
+layout(binding=1, rgba16f) restrict writeonly uniform imageCube irradianceMap;  // Output irradiance map (cubemap)
 layout(local_size_x=32, local_size_y=32, local_size_z=1) in;
 
 // Computes the Van Der Corput sequence for quasi-random (low-discrepancy) sampling.
@@ -29,10 +29,19 @@ vec2 HammersleySample(uint index) {
 }
 
 // Samples a point on the unit hemisphere using spherical coordinates.
-vec3 SampleHemisphere(float u, float v) {
-    const float rad = sqrt(max(0.0, 1.0 - u * u));
-    return vec3(cos(TWO_PI * v) * rad, sin(TWO_PI * v) * rad, u);
+vec3 SampleHemisphereCosine(vec2 xi)
+{
+    float phi = TWO_PI * xi.x;
+    float cosTheta = sqrt(1.0 - xi.y);
+    float sinTheta = sqrt(xi.y);
+
+    return vec3(
+        cos(phi) * sinTheta,
+        sin(phi) * sinTheta,
+        cosTheta
+    );
 }
+
 
 // Determines the normalized direction for each texel of the output cubemap.
 vec3 GetSampleDirection() {
@@ -59,24 +68,17 @@ vec3 GetSampleDirection() {
 }
 
 // Constructs an orthonormal basis for a given normal vector.
-void OrthonormalBasis(const vec3 n, out vec3 t, out vec3 b) {
-    // Create a tangent that's orthogonal to the normal
-
-    // TODO: optimize this !
-    vec3 up;
-    if (abs(n) != vec3(0.0, 1.0, 0.0)) {
-        up = vec3(0.0, 1.0, 0.0);
-    } else if(abs(n) != vec3(1.0, 0.0, 0.0)) {
-        up = vec3(1.0, 0.0, 0.0);
-    } else if(abs(n) != vec3(1.0, 0.0, 0.0)) {
-        up = vec3(0.0, 0.0, 1.0);
+void OrthonormalBasis(vec3 n, out vec3 t, out vec3 b)
+{
+    if (n.z < -0.9999999) {
+        t = vec3(0.0, -1.0, 0.0);
+        b = vec3(-1.0, 0.0, 0.0);
+    } else {
+        float a = 1.0 / (1.0 + n.z);
+        float b2 = -n.x * n.y * a;
+        t = vec3(1.0 - n.x * n.x * a, b2, -n.x);
+        b = vec3(b2, 1.0 - n.y * n.y * a, -n.y);
     }
-    b = cross(n, up);
-    // expose so bugs !
-//    b = abs(n.y) < EPSILON ? cross(n, vec3(1.0, 0.0, 0.0)) : cross(n, vec3(0.0, 1.0, 0.0));
-
-    b = normalize(b);
-    t = normalize(cross(n, b)); // Compute the third orthonormal vector
 }
 
 // Transforms a sample point from tangent space to world space.
@@ -127,19 +129,17 @@ vec3 compute_irradiance_with_corrections(vec3 n) {
     for(uint i = 0; i < SAMPLE_COUNT; ++i) {
         // Generate a sample direction in the hemisphere around the current direction
         vec2 sampleUV = HammersleySample(i);
-        vec3 hemisphereSample = ToWorldSpace(SampleHemisphere(sampleUV.x, sampleUV.y), n, t, b);
+        vec3 hemisphereSample = ToWorldSpace(SampleHemisphereCosine(sampleUV), n, t, b);
 
-        // Weight by the cosine of the angle between the sample direction and the normal
-        float weight = max(0, dot(hemisphereSample, n));
+//        vec3 env_color = texture(envMap, hemisphereSample).rgb;
+        vec3 env_color = textureLod(envMap, hemisphereSample, 0.0).rgb;
 
-        vec3 env_color = texture(envMap, hemisphereSample).rgb;
-        // HDR tonemap and gamma correct
+        // HDR tonemap
         env_color = env_color / (env_color + vec3(1.0));
-        env_color = pow(env_color, vec3(1.0/2.2));
 
         // Accumulate the weighted environment map sample
-//         result += 2.0 * textureLod(envMap, hemisphereSample, 0.5).rgb * weight;
-//        result += 2.0 * texture(envMap, hemisphereSample).rgb * weight;
+        // Weight by the cosine of the angle between the sample direction and the normal
+        float weight = max(0, dot(hemisphereSample, n));
         result += 2.0 * env_color * weight;
     }
 

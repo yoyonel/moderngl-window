@@ -279,7 +279,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         nx, ny, nz = int(w / gw), int(h / gh), 6
         #
         hdr_texture.use(0)
-        result.bind_to_image(0, read=False, write=True)
+        result.bind_to_image(1, read=False, write=True)
         prog_equirect2cube.run(nx, ny, nz)
 
         # RELEASE
@@ -314,7 +314,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         nx, ny, nz = int(w / gw), int(h / gh), 6
         #
         env_cubemap.use(location=0)
-        irradiance_map_texture.bind_to_image(0, read=False, write=True)
+        irradiance_map_texture.bind_to_image(unit=1, read=False, write=True)
         irradiance_map_shader.run(nx, ny, nz)
 
         # RELEASE
@@ -348,12 +348,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         # // ----------------------------------------------------------------------------------------------------
         # TODO: integrate into moderngl
         logger.info("Copy 0th mipmap level into destination environment map.")
-        GL.glCopyImageSubData(
-            env_cubemap.glo, GL.GL_TEXTURE_CUBE_MAP, 0, 0, 0, 0,
-            prefiltered_specular_texture.glo, GL.GL_TEXTURE_CUBE_MAP, 0, 0, 0, 0,
-            prefiltered_specular_texture.size[0], prefiltered_specular_texture.size[1], 6
-        )
-        # self.ctx.copy_texture_cube(prefiltered_specular_texture, env_cubemap)
+        self.ctx.copy_texture_cube(prefiltered_specular_texture, env_cubemap)
         assert self.ctx.error == "GL_NO_ERROR", self.ctx.error
 
         logger.info("Pre-filter rest of the mip chain.")
