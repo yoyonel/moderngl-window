@@ -9,6 +9,7 @@ TODO:
 import functools
 import logging
 import pathlib
+import time
 from pathlib import Path
 from typing import Optional, Callable, Any, Final
 
@@ -76,6 +77,11 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prefiltered_specular_map: Optional[moderngl.TextureCube] = None
         self.irradiance_map_cubemap: Optional[moderngl.TextureCube] = None
 
+        # Load Compute Shaders once (before use in precompute)
+        self.prog_equirect2cube = self.load_compute_shader("programs/IBL/equirect2cube.glsl")
+        self.prog_spmap = self.load_compute_shader("programs/IBL/spmap.glsl")
+        self.prog_irmap = self.load_compute_shader("programs/IBL/irmap.glsl")
+
         # // pbr: generate a (static/constant) 2D LUT from the BRDF equations used.
         self.brdf_lut_texture = self.build_brdf_lut_texture(
             size=PBRWithPrefilteredSpecular.res_for_brdf_lut
@@ -89,7 +95,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.ui_hdri_id = 0
 
         self.ui_irradiance_method_options = ["Monte Carlo (Fast)", "Convolution (Stable)"]
-        self.ui_irradiance_method = 0  # 0: Monte Carlo, 1: Convolution
+        self.ui_irradiance_method = 1  # 0: Monte Carlo, 1: Convolution
         self.ui_irradiance_clamp = (
             50.0  # Default higher than 1.0 to preserve HDR but limit huge spikes
         )
@@ -112,6 +118,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         self.backgroundShader = self.load_program("programs/PBR/background.glsl")
         self.backgroundShader["environmentMap"].value = 0
+        self.backgroundShader["environmentMap"].value = 0
+        self.backgroundShader["blur_lod"].value = 0.0
+
         self.backgroundShader["blur_lod"].value = 0.0
 
         self.ui_nr_rows = 7
@@ -189,7 +198,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                 assert type(ogl_object.mglo) is moderngl.mgl.InvalidObject
                 ogl_object = None
 
-    @gl_time_elapsed
+    # @gl_time_elapsed # Removed decorator to have fine grained profiling
     def precompute_from_hdr_env_map(
         self,
         hdri_name: str,
@@ -199,15 +208,23 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if release:
             self._release_textures()
 
+        # Measure CPU/IO time for loading EXR
+        t0 = time.perf_counter()
         # // pbr: load the HDR environment map
         # // ---------------------------------
         self.hdr_texture = self.load_hdr_env_map(hdri_name)
+        t1 = time.perf_counter()
+        logger.info(f"Asset Loading Time (CPU + Upload): {(t1 - t0) * 1000:.2f} ms")
+
+        # Measure GPU Compute time for PBR generation
+        query = GL.glGenQueries(1)[0]
+        GL.glBeginQuery(GL.GL_TIME_ELAPSED, query)
 
         # build hires cubemap for the skybox from HDR equirectangular environment map
         self.env_cubemap_hires = self.build_env_cubemap(
             self.hdr_texture, size=PBRWithPrefilteredSpecular.res_for_env_map_hires
         )
-        self.ctx.finish()
+        # self.ctx.finish() # Remove intermediate finish to let driver pipeline
 
         # // pbr: convert HDR equirectangular environment map to cubemap equivalent
         # // ----------------------------------------------------------------------
@@ -215,12 +232,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             self.hdr_texture, size=PBRWithPrefilteredSpecular.res_for_env_map
         )
         self.env_cubemap.build_mipmaps()
-        self.ctx.finish()
+        # self.ctx.finish()
 
         # // pbr: create a pre-filter cubemap, and re-scale capture FBO to pre-filter scale.
         # // --------------------------------------------------------------------------------
         self.prefiltered_specular_map = self.build_prefiltered_specular_map(self.env_cubemap)
-        self.ctx.finish()
+        # self.ctx.finish()
 
         # // pbr: create an irradiance cubemap, and re-scale capture FBO to irradiance scale.
         # // --------------------------------------------------------------------------------
@@ -229,11 +246,19 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.irradiance_map_cubemap = self.build_irradiance_cubemap(
             self.env_cubemap, size=PBRWithPrefilteredSpecular.res_for_irradiance_map
         )
-        self.ctx.finish()
+        # self.ctx.finish()
+
+        GL.glEndQuery(GL.GL_TIME_ELAPSED)
 
         if wait_for_finish:
-            logger.info("Wait for all computing commands to finish ...")
+            # logger.info("Wait for all computing commands to finish ...")
             self.ctx.finish()
+            
+        # Retrieve query result
+        elapsed_gpu = GL.glGetQueryObjectuiv(query, GL.GL_QUERY_RESULT) 
+        self.elapsed_time = elapsed_gpu
+        logger.info(f"PBR Generation Time (GPU Compute): {self.elapsed_time / 1_000_000.0:.2f} ms")
+        GL.glDeleteQueries(1, [query])
 
     def on_render(self, time, frame_time):
         self.average_frame_time = (
@@ -311,7 +336,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             dtype=dtype_precision,
         )
 
-        prog_equirect2cube = self.load_compute_shader("programs/IBL/equirect2cube.glsl")
+        # prog_equirect2cube = self.load_compute_shader("programs/IBL/equirect2cube.glsl")
         # config for compute shader
         w, h = result.size
         gw, gh = 32, 32
@@ -319,10 +344,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         #
         hdr_texture.use(0)
         result.bind_to_image(1, read=False, write=True)
-        prog_equirect2cube.run(nx, ny, nz)
+        self.prog_equirect2cube.run(nx, ny, nz)
 
         # RELEASE
-        prog_equirect2cube.release()
+        # prog_equirect2cube.release()
 
         return result
 
@@ -346,7 +371,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         #
         irradiance_map_texture.filter = moderngl.LINEAR, moderngl.LINEAR
 
-        irradiance_map_shader = self.load_compute_shader("programs/IBL/irmap.glsl")
+        # irradiance_map_shader = self.load_compute_shader("programs/IBL/irmap.glsl")
         # config for compute shader
         w, h = irradiance_map_texture.size
         gw, gh = min(32, irradiance_map_texture.size[0]), min(32, irradiance_map_texture.size[1])
@@ -355,12 +380,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         env_cubemap.use(location=0)
         irradiance_map_texture.bind_to_image(unit=1, read=False, write=True)
         # uniform int method; 0: Monte Carlo, 1: Convolution
-        irradiance_map_shader["method"] = self.ui_irradiance_method
-        irradiance_map_shader["max_intensity"] = self.ui_irradiance_clamp
-        irradiance_map_shader.run(nx, ny, nz)
+        self.prog_irmap["method"] = self.ui_irradiance_method
+        self.prog_irmap["max_intensity"] = self.ui_irradiance_clamp
+        self.prog_irmap.run(nx, ny, nz)
 
         # RELEASE
-        irradiance_map_shader.release()
+        # irradiance_map_shader.release()
 
         return irradiance_map_texture
 
@@ -385,7 +410,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         # // generate mipmaps for the cubemap so OpenGL automatically allocates the required memory.
         prefiltered_specular_texture.build_mipmaps()
 
-        compute_shader = self.load_compute_shader("programs/IBL/spmap.glsl")
+        # compute_shader = self.load_compute_shader("programs/IBL/spmap.glsl")
         # // pbr: run a quasi monte-carlo simulation on the environment lighting to create a prefilter (cube)map.
         # // ----------------------------------------------------------------------------------------------------
         # TODO: integrate into moderngl
@@ -400,9 +425,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         mipmap_size = mipmap_size
         for level in range(1, levels + 1):
             logger.debug(f"Level {level}")
-            logger.debug(f'{compute_shader["roughnessValue"].value=}')
+            logger.debug(f'{self.prog_spmap["roughnessValue"].value=}')
 
-            compute_shader["roughnessValue"] = level * delta_roughness
+            self.prog_spmap["roughnessValue"] = level * delta_roughness
 
             # config for compute shader
             w, h = mipmap_size, mipmap_size
@@ -412,12 +437,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             #
             env_cubemap.use(location=0)
             prefiltered_specular_texture.bind_to_image(1, read=False, write=True, level=level)
-            compute_shader.run(nx, ny, nz)
+            self.prog_spmap.run(nx, ny, nz)
 
             mipmap_size //= 2
 
         # RELEASE
-        compute_shader.release()
+        # compute_shader.release()
 
         return prefiltered_specular_texture
 
