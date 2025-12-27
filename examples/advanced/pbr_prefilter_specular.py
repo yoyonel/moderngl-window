@@ -41,7 +41,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
     resource_dir: Path = (Path(__file__) / "../../resources").resolve()
 
     # exhib some bugs (dark pixel) at around spheres if the size is too low (for example size=32)
-    res_for_brdf_lut: Final[int] = 64
+    res_for_brdf_lut: Final[int] = 512
     # env cubemap resolution for skybox rendering
     res_for_env_map_hires: Final[int] = 2048
     # env cubemap resolution for IBL computations
@@ -94,7 +94,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.ui_exposure = 1.2
         self.prog_pbr_lighting["albedo"] = self.ui_albedo
         self.prog_pbr_lighting["ao"] = self.ui_ao
-        self.prog_pbr_lighting["u_exposure"] = self.ui_exposure
+        self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
 
         self.backgroundShader = self.load_program("programs/PBR/background.glsl")
         self.backgroundShader["environmentMap"].value = 0
@@ -148,10 +148,6 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             while not stopTimerAvailable:
                 stopTimerAvailable = GL.glGetQueryObjectiv(query, GL.GL_QUERY_RESULT_AVAILABLE)
             # // get query results
-            # UNSIGNED INT 64 bits doesn't work ! numpy conversion problem on OpenGL python library :'(
-            # no support for `GL_UNSIGNED_INT64_AMD` native OpenGL format, because OpenGL python library missing this
-            # type entry `GL_1_1.GL_UNSIGNED_INT64` for building the mapping conversion `GL_TYPE_TO_ARRAY_MAPPING`
-            # self.elapsed_time = GL.glGetQueryObjectui64v(query, GL.GL_QUERY_RESULT)
             # UNSIGNED INT 32 bits work :-)
             self.elapsed_time = GL.glGetQueryObjectuiv(query, GL.GL_QUERY_RESULT)
             return returned_value
@@ -419,7 +415,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["albedo"] = self.ui_albedo
         self.prog_pbr_lighting["ao"] = self.ui_ao
         # FIXME: potentiellement un problème de conflit sur exposure comme uniform shader name (avec moderngl[-window])
-        self.prog_pbr_lighting["u_exposure"] = self.ui_exposure
+        self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
 
         self.irradiance_map_cubemap.use(location=0)
         self.prefiltered_specular_map.use(location=1)

@@ -1,4 +1,4 @@
-#version 330
+#version 450 core
 
 #if defined VERTEX_SHADER
 

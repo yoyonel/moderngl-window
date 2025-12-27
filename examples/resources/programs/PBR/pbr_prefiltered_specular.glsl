@@ -1,4 +1,4 @@
-#version 430 core
+#version 450 core
 
 #if defined VERTEX_SHADER
 
@@ -36,7 +36,7 @@ uniform float metallic;
 uniform float roughness;
 uniform float ao;
 
-uniform float u_exposure;
+uniform float pbr_exposure;
 
 // IBL
 uniform samplerCube irradianceMap;
@@ -199,7 +199,7 @@ void main()
     vec3 color = ambient + Lo;
 //    color = kD * diffuse;
 
-    color *= u_exposure;
+    color *= pbr_exposure;
 
     // HDR tonemapping
 //    color = color / (color + vec3(1.0));
