@@ -91,8 +91,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         self.ui_albedo = [0.50, 0.50, 0.50]
         self.ui_ao = 1.0
+        self.ui_exposure = 1.2
         self.prog_pbr_lighting["albedo"] = self.ui_albedo
         self.prog_pbr_lighting["ao"] = self.ui_ao
+        self.prog_pbr_lighting["u_exposure"] = self.ui_exposure
 
         self.backgroundShader = self.load_program("programs/PBR/background.glsl")
         self.backgroundShader["environmentMap"].value = 0
@@ -167,6 +169,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             if ogl_object is not None:
                 ogl_object.release()
                 assert type(ogl_object.mglo) is moderngl.mgl.InvalidObject
+                ogl_object = None
                 
     @gl_time_elapsed
     def precompute_from_hdr_env_map(
@@ -187,15 +190,18 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             self.hdr_texture,
             size=PBRWithPrefilteredSpecular.res_for_env_map_hires
         )
+        self.ctx.finish()
 
         # // pbr: convert HDR equirectangular environment map to cubemap equivalent
         # // ----------------------------------------------------------------------
         self.env_cubemap = self.build_env_cubemap(self.hdr_texture, size=PBRWithPrefilteredSpecular.res_for_env_map)
         self.env_cubemap.build_mipmaps()
+        self.ctx.finish()
 
         # // pbr: create a pre-filter cubemap, and re-scale capture FBO to pre-filter scale.
         # // --------------------------------------------------------------------------------
         self.prefiltered_specular_map = self.build_prefiltered_specular_map(self.env_cubemap)
+        self.ctx.finish()
 
         # // pbr: create an irradiance cubemap, and re-scale capture FBO to irradiance scale.
         # // --------------------------------------------------------------------------------
@@ -205,6 +211,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             self.env_cubemap,
             size=PBRWithPrefilteredSpecular.res_for_irradiance_map
         )
+        self.ctx.finish()
 
         if wait_for_finish:
             logger.info("Wait for all computing commands to finish ...")
@@ -411,6 +418,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         # from imgui
         self.prog_pbr_lighting["albedo"] = self.ui_albedo
         self.prog_pbr_lighting["ao"] = self.ui_ao
+        # FIXME: potentiellement un problème de conflit sur exposure comme uniform shader name (avec moderngl[-window])
+        self.prog_pbr_lighting["u_exposure"] = self.ui_exposure
 
         self.irradiance_map_cubemap.use(location=0)
         self.prefiltered_specular_map.use(location=1)
@@ -477,6 +486,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         _, self.ui_albedo = imgui.color_edit3("Albedo", self.ui_albedo)
         _, self.ui_ao = imgui.slider_float("Ambient Occlusion", self.ui_ao, 0.05, 10.0)
+        _, self.ui_exposure = imgui.slider_float("Exposure", self.ui_exposure, 1.0, 1.5)
         _, self.ui_nr_rows = imgui.slider_int("Number of Rows", self.ui_nr_rows, 1, 10)
         _, self.ui_nr_columns = imgui.slider_int("Number of Columns", self.ui_nr_columns, 1, 10)
         _, self.ui_spacing = imgui.slider_float("Spacing", self.ui_spacing, 1.0, 10.0)

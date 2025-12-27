@@ -36,6 +36,8 @@ uniform float metallic;
 uniform float roughness;
 uniform float ao;
 
+uniform float u_exposure;
+
 // IBL
 uniform samplerCube irradianceMap;
 uniform samplerCube prefilterMap;
@@ -142,6 +144,17 @@ vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, i
     // add to outgoing radiance Lo
     return (kD * albedo / PI + specular) * radiance * NdotL;// note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
 }
+
+vec3 ACESFilm(vec3 x)
+{
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
 // ----------------------------------------------------------------------------
 void main()
 {
@@ -186,8 +199,12 @@ void main()
     vec3 color = ambient + Lo;
 //    color = kD * diffuse;
 
+    color *= u_exposure;
+
     // HDR tonemapping
-    color = color / (color + vec3(1.0));
+//    color = color / (color + vec3(1.0));
+    color = ACESFilm(color);
+
     // gamma correct
     color = pow(color, vec3(1.0/2.2));
 
