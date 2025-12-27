@@ -109,6 +109,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             logger.error(self.wnd.ctx.error)
         self.imgui = ModernglWindowRenderer(self.wnd)
         self.imgui.io.want_capture_mouse = False
+        self._update_imgui_resources()
 
         self.camera.set_position(0, 0, 10)
 
@@ -116,6 +117,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.ui_clear_color = (0, 1, 0)
         self.clear_color = self.ui_clear_color
         self.ui_wireframe_enabled = False
+
+        self.ui_debug_skybox_options = ["High Res", "Low Res", "Irradiance", "Prefilter"]
+        self.ui_debug_skybox_id = 0
 
     @classmethod
     def add_arguments(cls, parser):
@@ -232,7 +236,15 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             self.ctx.wireframe = False
 
         if self.ui_skybox_enabled:
-            self.render_skybox(self.env_cubemap_hires)
+            # Debug Skybox selection
+            if self.ui_debug_skybox_id == 0:
+                self.render_skybox(self.env_cubemap_hires)
+            elif self.ui_debug_skybox_id == 1:
+                self.render_skybox(self.env_cubemap)
+            elif self.ui_debug_skybox_id == 2:
+                self.render_skybox(self.irradiance_map_cubemap)
+            elif self.ui_debug_skybox_id == 3:
+                self.render_skybox(self.prefiltered_specular_map)
 
         # TODO: construct a debug view for this resources
         # self.render_skybox(self.env_cubemap)
@@ -407,6 +419,11 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         return brdf_lut_texture
 
+    def _update_imgui_resources(self):
+        # We need to register textures for ImGui
+        # This is a bit manual, but required by moderngl-window's integration
+        self.imgui.register_texture(self.brdf_lut_texture)
+
     def render_spheres(self):
         self.prog_pbr_lighting["projection"].write(self.camera.projection.matrix)
         self.prog_pbr_lighting["view"].write(self.camera.matrix)
@@ -479,6 +496,18 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if changed:
             self.precompute_from_hdr_env_map(self.hdri_names[self.ui_hdri_id])
             logger.info(f"Time spent on the GPU: {self.elapsed_time / 1_000_000.0:.2f} ms")
+
+        imgui.separator()
+        imgui.text("Debug Views")
+        _, self.ui_debug_skybox_id = imgui.combo("Skybox Texture", self.ui_debug_skybox_id, self.ui_debug_skybox_options)
+        
+        if imgui.collapsing_header("BRDF LUT"):
+            # Inspect BRDF LUT
+            width = 256
+            height = 256
+            # Flip UVs for correct display if needed, but simple image is fine
+            imgui.image(imgui.ImTextureRef(self.brdf_lut_texture.glo), (width, height), (0, 1), (1, 0))
+        imgui.separator()
 
         _, self.ui_albedo = imgui.color_edit3("Albedo", self.ui_albedo)
         _, self.ui_ao = imgui.slider_float("Ambient Occlusion", self.ui_ao, 0.05, 10.0)
