@@ -23,9 +23,11 @@ uniform samplerCube environmentMap;
 // for visualize LUT BRDF texture
 //uniform sampler2D environmentMap;
 
+uniform float blur_lod;
+
 void main()
 {
-    vec3 envColor = textureLod(environmentMap, normalize(WorldPos), 3).rgb;
+    vec3 envColor = textureLod(environmentMap, normalize(WorldPos), blur_lod).rgb;
     // for visualize LUT BRDF texture
 //    vec3 envColor = texture(environmentMap, normalize(WorldPos).xy).rgb;
 

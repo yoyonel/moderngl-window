@@ -80,6 +80,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.hdri_names = [hdri_path.stem for hdri_path in self.argv.path_to_hdr_env_map.glob("*.exr")]
         self.ui_hdri_id = 0
 
+        self.ui_irradiance_method_options = ["Monte Carlo (Fast)", "Convolution (Stable)"]
+        self.ui_irradiance_method = 0  # 0: Monte Carlo, 1: Convolution
+        self.ui_irradiance_clamp = 50.0  # Default higher than 1.0 to preserve HDR but limit huge spikes
+
         self.elapsed_time = 0.0
         self.precompute_from_hdr_env_map(self.hdri_names[self.ui_hdri_id])
         logger.info(f"Time spent on the GPU: {self.elapsed_time / 1_000_000.0:.2f} ms")
@@ -98,6 +102,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         self.backgroundShader = self.load_program("programs/PBR/background.glsl")
         self.backgroundShader["environmentMap"].value = 0
+        self.backgroundShader["blur_lod"].value = 0.0
 
         self.ui_nr_rows = 7
         self.ui_nr_columns = 7
@@ -120,6 +125,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         self.ui_debug_skybox_options = ["High Res", "Low Res", "Irradiance", "Prefilter"]
         self.ui_debug_skybox_id = 0
+
+
 
     @classmethod
     def add_arguments(cls, parser):
@@ -238,13 +245,13 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if self.ui_skybox_enabled:
             # Debug Skybox selection
             if self.ui_debug_skybox_id == 0:
-                self.render_skybox(self.env_cubemap_hires)
+                self.render_skybox(self.env_cubemap_hires, lod=0.0)
             elif self.ui_debug_skybox_id == 1:
-                self.render_skybox(self.env_cubemap)
+                self.render_skybox(self.env_cubemap, lod=1.0) # Show a bit of blur/mip level 1 for LowRes
             elif self.ui_debug_skybox_id == 2:
-                self.render_skybox(self.irradiance_map_cubemap)
+                self.render_skybox(self.irradiance_map_cubemap, lod=0.0) # Irradiance map has no mips
             elif self.ui_debug_skybox_id == 3:
-                self.render_skybox(self.prefiltered_specular_map)
+                self.render_skybox(self.prefiltered_specular_map, lod=1.0) # Show a mip level for prefilter
 
         # TODO: construct a debug view for this resources
         # self.render_skybox(self.env_cubemap)
@@ -330,6 +337,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         #
         env_cubemap.use(location=0)
         irradiance_map_texture.bind_to_image(unit=1, read=False, write=True)
+        # uniform int method; 0: Monte Carlo, 1: Convolution
+        irradiance_map_shader["method"] = self.ui_irradiance_method
+        irradiance_map_shader["max_intensity"] = self.ui_irradiance_clamp
         irradiance_map_shader.run(nx, ny, nz)
 
         # RELEASE
@@ -458,7 +468,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                 self.prog_pbr_lighting["normalMatrix"].write(glm.transpose(glm.inverse(glm.mat3(model))))
                 self.sphere.render(self.prog_pbr_lighting)
 
-    def render_skybox(self, cubemap: moderngl.TextureCube):
+    def render_skybox(self, cubemap: moderngl.TextureCube, lod: float = 0.0):
         skybox_cam = self.camera.matrix
         # Purge camera translation
         skybox_cam[3][0] = 0
@@ -468,6 +478,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         # self.ctx.disable(moderngl.DEPTH_TEST)
         self.backgroundShader["m_proj"].write(self.camera.projection.matrix)
         self.backgroundShader["m_camera"].write(skybox_cam)
+        self.backgroundShader["blur_lod"].value = lod
         cubemap.use(location=0)
         self.cube.render(self.backgroundShader)
 
@@ -500,6 +511,21 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         imgui.separator()
         imgui.text("Debug Views")
         _, self.ui_debug_skybox_id = imgui.combo("Skybox Texture", self.ui_debug_skybox_id, self.ui_debug_skybox_options)
+
+        changed, self.ui_irradiance_method = imgui.combo("Irradiance Gen Method", self.ui_irradiance_method, self.ui_irradiance_method_options)
+        changed_clamp, self.ui_irradiance_clamp = imgui.slider_float("Irradiance Clamp", self.ui_irradiance_clamp, 1.0, 100.0)
+        
+        if changed or changed_clamp:
+            logger.info(f"Regenerating Irradiance Map using {self.ui_irradiance_method_options[self.ui_irradiance_method]} and clamp {self.ui_irradiance_clamp}")
+            # Release previous texture to be clean? (not strictily necessary if overwriting, but good practice if recreating object)
+            if self.irradiance_map_cubemap:
+                self.irradiance_map_cubemap.release()
+            self.irradiance_map_cubemap = self.build_irradiance_cubemap(
+                self.env_cubemap,
+                size=PBRWithPrefilteredSpecular.res_for_irradiance_map
+            )
+            # Ensure we wait for it to be done if we want to measure time accurately or avoid glitches
+            self.ctx.finish()
         
         if imgui.collapsing_header("BRDF LUT"):
             # Inspect BRDF LUT

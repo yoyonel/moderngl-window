@@ -12,6 +12,8 @@ layout(binding=0) uniform samplerCube envMap;              // Input environment 
 layout(binding=1, rgba16f) restrict writeonly uniform imageCube irradianceMap;  // Output irradiance map (cubemap)
 layout(local_size_x=32, local_size_y=32, local_size_z=1) in;
 
+uniform float max_intensity;
+
 // Computes the Van Der Corput sequence for quasi-random (low-discrepancy) sampling.
 float VanDerCorput(uint index) {
     // Bit manipulation to create the sequence
@@ -107,11 +109,9 @@ vec3 compute_irradiance_convolution(vec3 N) {
             vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * N;
 
             vec3 env_color = texture(envMap, sampleVec).rgb;
-
-            // NOTE: tonemap needed if we don't want over exposed/high values ...
-            // HDR tonemap and gamma correct
-            env_color = env_color / (env_color + vec3(1.0));
-            env_color = pow(env_color, vec3(1.0/2.2));
+            
+            // Replaces bad tonemapping with proper Clamping to avoid fireflies
+            env_color = min(env_color, vec3(max_intensity));
 
             irradiance += env_color * weight;
 
@@ -134,8 +134,8 @@ vec3 compute_irradiance_with_corrections(vec3 n) {
 //        vec3 env_color = texture(envMap, hemisphereSample).rgb;
         vec3 env_color = textureLod(envMap, hemisphereSample, 0.0).rgb;
 
-        // HDR tonemap
-        env_color = env_color / (env_color + vec3(1.0));
+        // Replaces bad tonemapping with proper Clamping to avoid fireflies
+        env_color = min(env_color, vec3(max_intensity));
 
         // Accumulate the weighted environment map sample
         // Weight by the cosine of the angle between the sample direction and the normal
@@ -149,12 +149,19 @@ vec3 compute_irradiance_with_corrections(vec3 n) {
     return result;
 }
 
+// 0: Monte Carlo, 1: Convolution
+uniform int method;
+
 void main(void) {
     // Get the direction for the current texel
     vec3 n = GetSampleDirection();
 
-//    vec3 irradiance = compute_irradiance_convolution(n);
-    vec3 irradiance = compute_irradiance_with_corrections(n);
+    vec3 irradiance = vec3(0.0);
+    if (method == 0) {
+        irradiance = compute_irradiance_with_corrections(n);
+    } else {
+        irradiance = compute_irradiance_convolution(n);
+    }
 
     // Store the computed irradiance value for the current texel
     imageStore(irradianceMap, ivec3(gl_GlobalInvocationID), vec4(irradiance, 1.0));
