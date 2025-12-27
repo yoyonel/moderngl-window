@@ -93,9 +93,9 @@ vec3 compute_irradiance_convolution(vec3 N) {
     vec3 irradiance = vec3(0.0);
 
     // tangent space calculation from origin point
-    vec3 up    = vec3(0.0, 1.0, 0.0);
-    vec3 right = normalize(cross(up, N));
-    up         = normalize(cross(N, right));
+    vec3 up, right;
+    // Use robust basis construction to avoid Singularity at poles (N = 0,1,0)
+    OrthonormalBasis(N, right, up);
 
     float sampleDelta = 0.025;
     float nrSamples = 0.0;
@@ -108,7 +108,10 @@ vec3 compute_irradiance_convolution(vec3 N) {
             // tangent space to world
             vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * N;
 
-            vec3 env_color = texture(envMap, sampleVec).rgb;
+            // Fix "Orange Peel" artifact:
+            // Sample a higher LOD to band-limit the input signal.
+            // Using LOD ~3-4 ensures we don't miss high-frequency details (like sun) between our discrete samples.
+            vec3 env_color = textureLod(envMap, sampleVec, 3.0).rgb;
             
             // Replaces bad tonemapping with proper Clamping to avoid fireflies
             env_color = min(env_color, vec3(max_intensity));
@@ -132,7 +135,8 @@ vec3 compute_irradiance_with_corrections(vec3 n) {
         vec3 hemisphereSample = ToWorldSpace(SampleHemisphereCosine(sampleUV), n, t, b);
 
 //        vec3 env_color = texture(envMap, hemisphereSample).rgb;
-        vec3 env_color = textureLod(envMap, hemisphereSample, 0.0).rgb;
+        // Fix "Orange Peel" artifact for Monte Carlo too: use slight blur/LOD.
+        vec3 env_color = textureLod(envMap, hemisphereSample, 3.0).rgb;
 
         // Replaces bad tonemapping with proper Clamping to avoid fireflies
         env_color = min(env_color, vec3(max_intensity));
