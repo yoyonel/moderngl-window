@@ -553,12 +553,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.cube.render(self.backgroundShader)
 
     def on_resize(self, width: int, height: int):
+        # Calculate aspect ratio directly from arguments to avoid querying window state
+        # which might be inconsistent during the event.
         if width > 0 and height > 0:
-            super().on_resize(width, height)
+            self.camera.projection.update(aspect_ratio=width / height)
+
         self.imgui.resize(width, height)
-        # Flush the pipeline during resize to help drivers (especially NVIDIA)
-        # synchronize window events and GL commands.
-        self.ctx.finish()
 
     def render_ui(self):
         imgui.new_frame()
