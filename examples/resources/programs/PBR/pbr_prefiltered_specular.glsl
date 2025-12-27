@@ -196,7 +196,39 @@ void main()
     vec2 textureSize = vec2(textureSize(brdfLUT, 0));
     brdfUV = brdfUV * (textureSize - 1.0) / textureSize + 0.5 / textureSize;
     vec2 brdf       = texture(brdfLUT, brdfUV).rg;
-    vec3 specular   = prefilteredColor * (F * brdf.x + brdf.y);
+
+    // --- High Quality Multiple Scattering Approximation ---
+    // Single Scattering term (current)
+    vec3 FssEss = F * brdf.x + brdf.y;
+
+    // Multiple Scattering term (Energy Compensation)
+    // Approximate Average Fresnel (Favg) for the material
+    // For Favg, we can use a simplified fit: F0 + (1-F0)/21
+    vec3 Favg = F0 + (1.0 - F0) / 21.0;
+    
+    // Ess (Energy Single Scattering) approx from LUT (Scale + Bias)
+    // Note: brdf.x/y contain the integrated G * F (without F0) terms, but roughly brdf.x + brdf.y is the directional albedo conservation
+    float Ess = brdf.x + brdf.y; 
+
+    // Multiple Scattering Factor (Fms)
+    // Derivation from Kulla & Conty (Imageworks)
+    vec3 Fms = Favg * FssEss / (1.0 - Favg * (1.0 - Ess));
+    
+    // Combined Specular with Energy Compensation
+    // We add the multiple scattering contribution scaled by the energy loss (1 - Ess)
+    // Actually Fms is the total term? No. 
+    // The approximated formulae is: Specular = SingleScatt + MultiScatt * EnergyLoss
+    // But let's use the simplest efficient form:
+    // FssEss + (1.0 - Ess) * Fms
+    
+    vec3 multipleScattering = Fms * (1.0 - Ess);
+    vec3 specular = prefilteredColor * (FssEss + multipleScattering);
+
+    // Energy Conservation for Diffuse
+    // The energy available for diffuse is what is left after Specular (Single + Multi)
+    // kD = 1.0 - (FssEss + multipleScattering);
+    kD = 1.0 - (FssEss + multipleScattering);
+    kD *= 1.0 - metallic;
 
     vec3 ambient    = (kD * diffuse + specular) * ao;
 
