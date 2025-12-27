@@ -4,6 +4,7 @@ from moderngl_window.geometry.cube import cube as cube
 from moderngl_window.geometry.quad import quad_2d as quad_2d
 from moderngl_window.geometry.quad import quad_fs as quad_fs
 from moderngl_window.geometry.sphere import sphere as sphere
+from moderngl_window.geometry.icosphere import icosphere as icosphere
 
 __all__ = [
     "AttributeNames",
@@ -12,4 +13,5 @@ __all__ = [
     "quad_2d",
     "quad_fs",
     "sphere",
+    "icosphere",
 ]

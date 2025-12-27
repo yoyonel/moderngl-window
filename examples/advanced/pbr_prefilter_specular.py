@@ -64,9 +64,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.average_frame_time = 0.01666
 
         self.cube = geometry.cube(size=(100, 100, 100))
-        self.ui_sphere_sector = 64
-        self.sphere = geometry.sphere(
-            radius=1.0, sectors=self.ui_sphere_sector, rings=self.ui_sphere_sector
+        self.ui_sphere_subdivisions = 3
+        self.ui_sphere_irregularity = 0.0
+        self.sphere = geometry.icosphere(
+            radius=1.0, subdivisions=self.ui_sphere_subdivisions, randomization=self.ui_sphere_irregularity
         )
         # with cubes no black pixels problem, certainly a problem a mesh definition/precision
         # self.sphere = geometry.cube(size=(2.0, 2.0, 2.0))
@@ -147,6 +148,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         self.ui_debug_skybox_options = ["High Res", "Low Res", "Irradiance", "Prefilter"]
         self.ui_debug_skybox_id = 0
+
+        # Uniform state trackers to avoid GPU stalls via .value
+        self._last_exposure = self.ui_exposure
+        self._last_debug_mode = self.ui_visualization_mode
+        self._last_albedo = tuple(self.ui_albedo)
+        self._last_ao = self.ui_ao
 
     @classmethod
     def add_arguments(cls, parser):
@@ -482,18 +489,23 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["view"].write(self.camera.matrix)
         self.prog_pbr_lighting["camPos"].write(self.camera.position)
 
-        # Optimize uniforms: only update if changed
-        if self.prog_pbr_lighting["pbr_exposure"].value != self.ui_exposure:
+        # Optimize uniforms: only update if changed (local state tracking)
+        if self._last_exposure != self.ui_exposure:
             self.prog_pbr_lighting["pbr_exposure"].value = self.ui_exposure
-        if self.prog_pbr_lighting["debug_mode"].value != self.ui_visualization_mode:
+            self._last_exposure = self.ui_exposure
+            
+        if self._last_debug_mode != self.ui_visualization_mode:
             self.prog_pbr_lighting["debug_mode"].value = self.ui_visualization_mode
+            self._last_debug_mode = self.ui_visualization_mode
         
         albedo_tuple = tuple(self.ui_albedo)
-        if self.prog_pbr_lighting["albedo"].value != albedo_tuple:
+        if self._last_albedo != albedo_tuple:
             self.prog_pbr_lighting["albedo"].value = albedo_tuple
+            self._last_albedo = albedo_tuple
         
-        if self.prog_pbr_lighting["ao"].value != self.ui_ao:
+        if self._last_ao != self.ui_ao:
             self.prog_pbr_lighting["ao"].value = self.ui_ao
+            self._last_ao = self.ui_ao
 
         self.irradiance_map_cubemap.use(location=0)
         self.prefiltered_specular_map.use(location=1)
@@ -541,6 +553,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if width > 0 and height > 0:
             super().on_resize(width, height)
         self.imgui.resize(width, height)
+        # Flush the pipeline during resize to help drivers (especially NVIDIA) 
+        # synchronize window events and GL commands.
+        self.ctx.finish()
 
     def render_ui(self):
         imgui.new_frame()
@@ -613,13 +628,18 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         _, self.ui_nr_rows = imgui.slider_int("Number of Rows", self.ui_nr_rows, 1, 10)
         _, self.ui_nr_columns = imgui.slider_int("Number of Columns", self.ui_nr_columns, 1, 10)
         _, self.ui_spacing = imgui.slider_float("Spacing", self.ui_spacing, 1.0, 10.0)
-        changed, self.ui_sphere_sector = imgui.slider_int(
-            "number of vertical/horizontal segments", self.ui_sphere_sector, 4, 128
+        
+        imgui.text("Sphere Mesh (Geodesic)")
+        changed1, self.ui_sphere_subdivisions = imgui.slider_int(
+            "Subdivisions", self.ui_sphere_subdivisions, 0, 6
         )
-        if changed:
+        changed2, self.ui_sphere_irregularity = imgui.slider_float(
+            "Irregularity (Planet)", self.ui_sphere_irregularity, 0.0, 0.5
+        )
+        if changed1 or changed2:
             self.sphere.release()
-            self.sphere = geometry.sphere(
-                radius=1.0, sectors=self.ui_sphere_sector, rings=self.ui_sphere_sector
+            self.sphere = geometry.icosphere(
+                radius=1.0, subdivisions=self.ui_sphere_subdivisions, randomization=self.ui_sphere_irregularity
             )
         imgui.text(
             f"Camera Position: ({self.camera.position.x:.2f},{self.camera.position.y:.2f},{self.camera.position.z:.2f})"
