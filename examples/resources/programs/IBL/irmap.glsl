@@ -3,7 +3,7 @@
 // Constants
 const float PI = 3.14159265359;
 const float TWO_PI = 2.0 * PI;
-const uint SAMPLE_COUNT = 32 * 1024;
+const uint SAMPLE_COUNT = 1024;
 const highp float SAMPLE_COUNT_INV = 1.0 / float(SAMPLE_COUNT);
 const float EPSILON = 0.0;
 
