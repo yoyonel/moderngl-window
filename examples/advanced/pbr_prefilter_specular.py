@@ -481,10 +481,19 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["projection"].write(self.camera.projection.matrix)
         self.prog_pbr_lighting["view"].write(self.camera.matrix)
         self.prog_pbr_lighting["camPos"].write(self.camera.position)
-        self.prog_pbr_lighting["pbr_exposure"].value = self.ui_exposure
-        self.prog_pbr_lighting["debug_mode"].value = self.ui_visualization_mode
-        self.prog_pbr_lighting["albedo"].value = tuple(self.ui_albedo)
-        self.prog_pbr_lighting["ao"] = self.ui_ao
+
+        # Optimize uniforms: only update if changed
+        if self.prog_pbr_lighting["pbr_exposure"].value != self.ui_exposure:
+            self.prog_pbr_lighting["pbr_exposure"].value = self.ui_exposure
+        if self.prog_pbr_lighting["debug_mode"].value != self.ui_visualization_mode:
+            self.prog_pbr_lighting["debug_mode"].value = self.ui_visualization_mode
+        
+        albedo_tuple = tuple(self.ui_albedo)
+        if self.prog_pbr_lighting["albedo"].value != albedo_tuple:
+            self.prog_pbr_lighting["albedo"].value = albedo_tuple
+        
+        if self.prog_pbr_lighting["ao"].value != self.ui_ao:
+            self.prog_pbr_lighting["ao"].value = self.ui_ao
 
         self.irradiance_map_cubemap.use(location=0)
         self.prefiltered_specular_map.use(location=1)
@@ -529,6 +538,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.cube.render(self.backgroundShader)
 
     def on_resize(self, width: int, height: int):
+        if width > 0 and height > 0:
+            super().on_resize(width, height)
         self.imgui.resize(width, height)
 
     def render_ui(self):
