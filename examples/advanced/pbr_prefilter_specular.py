@@ -67,7 +67,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.ui_sphere_subdivisions = 3
         self.ui_sphere_irregularity = 0.0
         self.sphere = geometry.icosphere(
-            radius=1.0, subdivisions=self.ui_sphere_subdivisions, randomization=self.ui_sphere_irregularity
+            radius=1.0,
+            subdivisions=self.ui_sphere_subdivisions,
+            randomization=self.ui_sphere_irregularity,
         )
         # with cubes no black pixels problem, certainly a problem a mesh definition/precision
         # self.sphere = geometry.cube(size=(2.0, 2.0, 2.0))
@@ -260,9 +262,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if wait_for_finish:
             # logger.info("Wait for all computing commands to finish ...")
             self.ctx.finish()
-            
+
         # Retrieve query result
-        elapsed_gpu = GL.glGetQueryObjectuiv(query, GL.GL_QUERY_RESULT) 
+        elapsed_gpu = GL.glGetQueryObjectuiv(query, GL.GL_QUERY_RESULT)
         self.elapsed_time = elapsed_gpu
         logger.info(f"PBR Generation Time (GPU Compute): {self.elapsed_time / 1_000_000.0:.2f} ms")
         GL.glDeleteQueries(1, [query])
@@ -417,9 +419,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         # // generate mipmaps for the cubemap so OpenGL automatically allocates the required memory.
         prefiltered_specular_texture.build_mipmaps()
 
-        # compute_shader = self.load_compute_shader("programs/IBL/spmap.glsl")
-        # // pbr: run a quasi monte-carlo simulation on the environment lighting to create a prefilter (cube)map.
-        # // ----------------------------------------------------------------------------------------------------
+        # // pbr: run a quasi monte-carlo simulation on the environment lighting
+        # // to create a prefilter (cube)map.
+        # // --------------------------------------------------------------------------------------
         # TODO: integrate into moderngl
         logger.info("Copy 0th mipmap level into destination environment map.")
         self.ctx.copy_texture_cube(prefiltered_specular_texture, env_cubemap)
@@ -493,16 +495,16 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if self._last_exposure != self.ui_exposure:
             self.prog_pbr_lighting["pbr_exposure"].value = self.ui_exposure
             self._last_exposure = self.ui_exposure
-            
+
         if self._last_debug_mode != self.ui_visualization_mode:
             self.prog_pbr_lighting["debug_mode"].value = self.ui_visualization_mode
             self._last_debug_mode = self.ui_visualization_mode
-        
+
         albedo_tuple = tuple(self.ui_albedo)
         if self._last_albedo != albedo_tuple:
             self.prog_pbr_lighting["albedo"].value = albedo_tuple
             self._last_albedo = albedo_tuple
-        
+
         if self._last_ao != self.ui_ao:
             self.prog_pbr_lighting["ao"].value = self.ui_ao
             self._last_ao = self.ui_ao
@@ -514,7 +516,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         nr_rows = self.ui_nr_rows
         nr_columns = self.ui_nr_columns
         spacing = self.ui_spacing
-        # // render rows*column number of spheres with varying metallic/roughness values scaled by rows and columns respectively
+        # // render rows*column number of spheres with varying metallic/roughness values
+        # // scaled by rows and columns respectively
         for row in range(nr_rows):
             self.prog_pbr_lighting["metallic"].value = float(row) / float(nr_rows)
             for col in range(nr_columns):
@@ -523,8 +526,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                         (col - (nr_columns / 2)) * spacing, (row - (nr_rows / 2)) * spacing, 0.0
                     )
                 )
-                # // we clamp the roughness to 0.05 - 1.0 as perfectly smooth surfaces (roughness of 0.0) tend to look
-                # // a bit off on direct lighting.
+                # // we clamp the roughness to 0.05 - 1.0 as perfectly smooth surfaces
+                # // (roughness of 0.0) tend to look a bit off on direct lighting.
                 self.prog_pbr_lighting["roughness"].value = glm.clamp(
                     float(col) / float(nr_columns), 0.05, 1.0
                 )
@@ -553,7 +556,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if width > 0 and height > 0:
             super().on_resize(width, height)
         self.imgui.resize(width, height)
-        # Flush the pipeline during resize to help drivers (especially NVIDIA) 
+        # Flush the pipeline during resize to help drivers (especially NVIDIA)
         # synchronize window events and GL commands.
         self.ctx.finish()
 
@@ -601,15 +604,19 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         if changed or changed_clamp:
             logger.info(
-                f"Regenerating Irradiance Map using {self.ui_irradiance_method_options[self.ui_irradiance_method]} and clamp {self.ui_irradiance_clamp}"
+                f"Regenerating Irradiance Map using "
+                f"{self.ui_irradiance_method_options[self.ui_irradiance_method]} "
+                f"and clamp {self.ui_irradiance_clamp}"
             )
-            # Release previous texture to be clean? (not strictily necessary if overwriting, but good practice if recreating object)
+            # Release previous texture to be clean? (not strictily necessary if overwriting,
+            # but good practice if recreating object)
             if self.irradiance_map_cubemap:
                 self.irradiance_map_cubemap.release()
             self.irradiance_map_cubemap = self.build_irradiance_cubemap(
                 self.env_cubemap, size=PBRWithPrefilteredSpecular.res_for_irradiance_map
             )
-            # Ensure we wait for it to be done if we want to measure time accurately or avoid glitches
+            # Ensure we wait for it to be done if we want to measure time accurately
+            # or avoid glitches
             self.ctx.finish()
 
         if imgui.collapsing_header("BRDF LUT"):
@@ -628,7 +635,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         _, self.ui_nr_rows = imgui.slider_int("Number of Rows", self.ui_nr_rows, 1, 10)
         _, self.ui_nr_columns = imgui.slider_int("Number of Columns", self.ui_nr_columns, 1, 10)
         _, self.ui_spacing = imgui.slider_float("Spacing", self.ui_spacing, 1.0, 10.0)
-        
+
         imgui.text("Sphere Mesh (Geodesic)")
         changed1, self.ui_sphere_subdivisions = imgui.slider_int(
             "Subdivisions", self.ui_sphere_subdivisions, 0, 6
@@ -639,10 +646,13 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if changed1 or changed2:
             self.sphere.release()
             self.sphere = geometry.icosphere(
-                radius=1.0, subdivisions=self.ui_sphere_subdivisions, randomization=self.ui_sphere_irregularity
+                radius=1.0,
+                subdivisions=self.ui_sphere_subdivisions,
+                randomization=self.ui_sphere_irregularity,
             )
         imgui.text(
-            f"Camera Position: ({self.camera.position.x:.2f},{self.camera.position.y:.2f},{self.camera.position.z:.2f})"
+            f"Camera Position: ({self.camera.position.x:.2f}, "
+            f"{self.camera.position.y:.2f}, {self.camera.position.z:.2f})"
         )
 
         imgui.end()
