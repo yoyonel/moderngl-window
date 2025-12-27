@@ -186,7 +186,7 @@ void main()
 
     // https://docs.gl/sl4/textureQueryLevels
     // need OpenGL Shading Language Version >= 4.30
-    const float MAX_REFLECTION_LOD = float(textureQueryLevels(prefilterMap));
+    const float MAX_REFLECTION_LOD = float(textureQueryLevels(prefilterMap)) - 1.0;
     // or we can precompute and send it with uniform (or like here defined constant)
     //    const float MAX_REFLECTION_LOD = 9.0;
     vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb;

@@ -381,10 +381,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         logger.info("Pre-filter rest of the mip chain.")
         levels = int(glm.log2(env_cubemap.size[0]))
-        delta_roughness = 1.0 / max(float(levels - 1), 1.0)
+        delta_roughness = 1.0 / max(float(levels), 1.0)
         mipmap_size = env_cubemap.size[0] // 2
         mipmap_size = mipmap_size
-        for level in range(1, levels):
+        for level in range(1, levels + 1):
             logger.debug(f'Level {level}')
             logger.debug(f'{compute_shader["roughnessValue"].value=}')
 
@@ -393,7 +393,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             # config for compute shader
             w, h = mipmap_size, mipmap_size
             gw, gh = 32, 32
-            nx, ny, nz = int(w / gw), int(h / gh), 6
+            # Ensure at least one workgroup is dispatched even for small mip levels (< 32px)
+            nx, ny, nz = (w + gw - 1) // gw, (h + gh - 1) // gh, 6
             #
             env_cubemap.use(location=0)
             prefiltered_specular_texture.bind_to_image(1, read=False, write=True, level=level)
@@ -444,14 +445,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["pbr_exposure"].value = self.ui_exposure
         self.prog_pbr_lighting["debug_mode"].value = self.ui_visualization_mode
         self.prog_pbr_lighting["albedo"].value = tuple(self.ui_albedo)
-        # FIXME: potentiellement un problème de conflit sur exposure comme uniform shader name (avec moderngl[-window])
-        self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
         self.prog_pbr_lighting["ao"] = self.ui_ao
-        # from imgui
-        self.prog_pbr_lighting["albedo"] = self.ui_albedo
-        self.prog_pbr_lighting["ao"] = self.ui_ao
-        # FIXME: potentiellement un problème de conflit sur exposure comme uniform shader name (avec moderngl[-window])
-        self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
 
         self.irradiance_map_cubemap.use(location=0)
         self.prefiltered_specular_map.use(location=1)
