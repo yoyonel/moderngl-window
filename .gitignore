@@ -39,3 +39,6 @@ docs/_build/
 imgui.ini
 .DS_Store
 /tmp/
+
+# Assets
+*.exr
