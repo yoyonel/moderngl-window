@@ -1,0 +1,11 @@
+{
+  "assets": [
+    {
+      "name": "HDR Textures",
+      "github_repo": "yoyonel/moderngl-window",
+      "release_tag": "assets-v1",
+      "dest_dir": "examples/resources/textures/hdr",
+      "file_pattern": "*.exr"
+    }
+  ]
+}
