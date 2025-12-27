@@ -122,6 +122,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.ui_clear_color = (0, 1, 0)
         self.clear_color = self.ui_clear_color
         self.ui_wireframe_enabled = False
+        
+        self.ui_visualization_modes = ["Standard", "False Color (Luminance)"]
+        self.ui_visualization_mode = 0
 
         self.ui_debug_skybox_options = ["High Res", "Low Res", "Irradiance", "Prefilter"]
         self.ui_debug_skybox_id = 0
@@ -438,6 +441,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["projection"].write(self.camera.projection.matrix)
         self.prog_pbr_lighting["view"].write(self.camera.matrix)
         self.prog_pbr_lighting["camPos"].write(self.camera.position)
+        self.prog_pbr_lighting["pbr_exposure"].value = self.ui_exposure
+        self.prog_pbr_lighting["debug_mode"].value = self.ui_visualization_mode
+        self.prog_pbr_lighting["albedo"].value = tuple(self.ui_albedo)
+        # FIXME: potentiellement un problème de conflit sur exposure comme uniform shader name (avec moderngl[-window])
+        self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
+        self.prog_pbr_lighting["ao"] = self.ui_ao
         # from imgui
         self.prog_pbr_lighting["albedo"] = self.ui_albedo
         self.prog_pbr_lighting["ao"] = self.ui_ao
@@ -510,6 +519,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         imgui.separator()
         imgui.text("Debug Views")
+        _, self.ui_visualization_mode = imgui.combo("Visualization", self.ui_visualization_mode, self.ui_visualization_modes)
         _, self.ui_debug_skybox_id = imgui.combo("Skybox Texture", self.ui_debug_skybox_id, self.ui_debug_skybox_options)
 
         changed, self.ui_irradiance_method = imgui.combo("Irradiance Gen Method", self.ui_irradiance_method, self.ui_irradiance_method_options)

@@ -37,6 +37,7 @@ uniform float roughness;
 uniform float ao;
 
 uniform float pbr_exposure;
+uniform int debug_mode;
 
 // IBL
 uniform samplerCube irradianceMap;
@@ -243,6 +244,67 @@ void main()
 
     // gamma correct
     color = pow(color, vec3(1.0/2.2));
+
+    // --- Debug: False Color Mode (Luminance Stops) ---
+    if (debug_mode == 1) {
+        // Recalculate luminance of the FINAL color (after tonemap/gamma? No, usually before or after exposure but before tonemap)
+        // Filament doc says: "Visualizing brightness by color coding the stops"
+        // Let's visualize the EXPOSED linear color (before ACES/Gamma) to see physical values
+        
+        vec3 linear_exposed = (ambient + Lo) * pbr_exposure;
+        float luma = dot(linear_exposed, vec3(0.2126, 0.7152, 0.0722));
+        
+        // Middle gray is 0.18.
+        // log2(luma / 0.18) gives stops relative to middle gray.
+        float stops = log2(luma / 0.18);
+        
+        vec3 debugColor = vec3(0.0);
+        
+        if (stops < -4.0) debugColor = vec3(0.0, 0.0, 0.0);       // Very Black
+        else if (stops < -3.0) debugColor = vec3(0.2, 0.0, 0.2);  // Purple (-4 to -3)
+        else if (stops < -2.0) debugColor = vec3(0.0, 0.0, 0.5);  // Dark Blue (-3 to -2)
+        else if (stops < -1.0) debugColor = vec3(0.0, 0.0, 1.0);  // Blue (-2 to -1)
+        else if (stops < -0.1) debugColor = vec3(0.0, 0.5, 0.5);  // Cyan/Teal (-1 to 0)
+        
+        else if (stops < 0.1)  debugColor = vec3(0.0, 1.0, 0.0);  // GREEN = Middle Gray (+/- 0.1 stop) -- Filament uses Cyan for middle? Let's use Green for exact middle match visibility
+        
+        else if (stops < 1.0)  debugColor = vec3(0.5, 0.5, 0.0);  // Olive (0 to +1)
+        else if (stops < 2.0)  debugColor = vec3(1.0, 1.0, 0.0);  // Yellow (+1 to +2)
+        else if (stops < 3.0)  debugColor = vec3(1.0, 0.5, 0.0);  // Orange (+2 to +3)
+        else if (stops < 4.0)  debugColor = vec3(1.0, 0.0, 0.0);  // Red (+3 to +4)
+        else debugColor = vec3(1.0, 0.0, 1.0);                    // Magenta (> +4)
+        
+        // Filament standard (approx):
+        // Cyan = Middle Gray. Blue = Darks. Green/Yellow/Red = Brights.
+        // Let's tweak to match description "Cyan is middle gray":
+        
+        if (stops < -2.0) debugColor = vec3(0.0, 0.0, 1.0); // Blue
+        else if (stops < -1.0) debugColor = vec3(0.0, 0.5, 1.0); // Light Blue
+        else if (stops < 1.0)  debugColor = vec3(0.0, 1.0, 1.0); // Cyan (Middle +/- 1)
+        else if (stops < 2.0)  debugColor = vec3(0.0, 1.0, 0.0); // Green
+        else if (stops < 3.0)  debugColor = vec3(1.0, 1.0, 0.0); // Yellow
+        else debugColor = vec3(1.0, 0.0, 0.0); // Red
+        
+        // Let's stick to the rainbow gradients often seen:
+        // <-2: Black/Blue
+        // -1: Blue
+        // 0: Cyan (Middle Gray)
+        // +1: Green
+        // +2: Yellow
+        // +3: Red 
+        
+        // Final implementation choice:
+        if (stops < -2.5) debugColor = vec3(0.0, 0.0, 0.0); // < -2.5 EV
+        else if (stops < -1.5) debugColor = vec3(0.0, 0.0, 1.0); // -2 EV (Blue)
+        else if (stops < -0.5) debugColor = vec3(0.0, 0.5, 1.0); // -1 EV
+        else if (stops < 0.5)  debugColor = vec3(0.0, 1.0, 1.0); // 0 EV (Cyan - Middle Gray)
+        else if (stops < 1.5)  debugColor = vec3(0.0, 1.0, 0.0); // +1 EV (Green)
+        else if (stops < 2.5)  debugColor = vec3(1.0, 1.0, 0.0); // +2 EV (Yellow)
+        else debugColor = vec3(1.0, 0.0, 0.0);                   // +3+ EV (Red)
+
+        FragColor = vec4(debugColor, 1.0);
+        return; 
+    }
 
     FragColor = vec4(color, 1.0);
 }
