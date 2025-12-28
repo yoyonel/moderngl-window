@@ -41,7 +41,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
     aspect_ratio = None
     resizable = True
     vsync = False
-    samples = 8
+    samples = 0
     resource_dir: Path = (Path(__file__) / "../../resources").resolve()
 
     # exhib some bugs (dark pixel) at around spheres if the size is too low (for example size=32)
