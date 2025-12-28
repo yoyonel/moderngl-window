@@ -67,6 +67,7 @@ uniform mat4 view;
 // LTC
 uniform sampler2D ltc_mat;
 uniform sampler2D ltc_amp;
+uniform float time;
 
 // material parameters
 uniform vec3 albedo;
@@ -207,13 +208,20 @@ vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, i
         }
         vec3 lightUp = normalize(cross(lightRight, lightToSurf));
         
-        // Define the 4 corners (square facing the surface)
+        // Apply time-based rotation around the local Z axis (lightToSurf)
+        float angle = time * 0.5;  // Slow rotation
+        float cosA = cos(angle);
+        float sinA = sin(angle);
+        vec3 rotatedRight = lightRight * cosA + lightUp * sinA;
+        vec3 rotatedUp = -lightRight * sinA + lightUp * cosA;
+        
+        // Define the 4 corners (square facing the surface, rotated)
         float hw = lightRadius;
         vec3 points[4];
-        points[0] = lightPosition + (-lightRight - lightUp) * hw;
-        points[1] = lightPosition + (lightRight - lightUp) * hw;
-        points[2] = lightPosition + (lightRight + lightUp) * hw;
-        points[3] = lightPosition + (-lightRight + lightUp) * hw;
+        points[0] = lightPosition + (-rotatedRight - rotatedUp) * hw;
+        points[1] = lightPosition + (rotatedRight - rotatedUp) * hw;
+        points[2] = lightPosition + (rotatedRight + rotatedUp) * hw;
+        points[3] = lightPosition + (-rotatedRight + rotatedUp) * hw;
         
         // Sample LTC LUTs
         float NdotV = clamp(dot(N, V), 0.0, 1.0);

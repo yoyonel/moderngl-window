@@ -555,6 +555,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["projection"].write(self.camera.projection.matrix)
         self.prog_pbr_lighting["view"].write(self.camera.matrix)
         self.prog_pbr_lighting["camPos"].write(self.camera.position)
+        self.prog_pbr_lighting["time"] = self.wnd.time
 
         # Optimize uniforms: only update if changed (local state tracking)
         if self._last_exposure != self.ui_exposure:
