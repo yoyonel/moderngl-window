@@ -57,6 +57,130 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         self.camera.projection.update(near=0.001, far=100)
 
+        self.MATERIAL_PRESETS = [
+            # Group 1: Pure Metals (Metallic 1.0, Low Roughness)
+            {"name": "Gold", "albedo": (1.00, 0.71, 0.29), "metallic": 1.0, "roughness": 0.05},
+            {"name": "Silver", "albedo": (0.95, 0.93, 0.88), "metallic": 1.0, "roughness": 0.05},
+            {"name": "Copper", "albedo": (0.95, 0.64, 0.54), "metallic": 1.0, "roughness": 0.07},
+            {"name": "Iron", "albedo": (0.56, 0.57, 0.58), "metallic": 1.0, "roughness": 0.1},
+            {"name": "Aluminum", "albedo": (0.91, 0.92, 0.92), "metallic": 1.0, "roughness": 0.08},
+            {"name": "Zinc", "albedo": (0.66, 0.82, 0.85), "metallic": 1.0, "roughness": 0.12},
+            {"name": "Chrome", "albedo": (0.55, 0.56, 0.55), "metallic": 1.0, "roughness": 0.02},
+            {"name": "Titanium", "albedo": (0.54, 0.50, 0.44), "metallic": 1.0, "roughness": 0.15},
+            {"name": "Platinum", "albedo": (0.67, 0.66, 0.63), "metallic": 1.0, "roughness": 0.05},
+            {"name": "Nickel", "albedo": (0.66, 0.61, 0.54), "metallic": 1.0, "roughness": 0.12},
+
+            # Group 2: Aged/Industrial Metals (Metallic 1.0, Mid-High Roughness)
+            {"name": "Rusty Iron", "albedo": (0.3, 0.15, 0.1), "metallic": 0.6, "roughness": 0.8},
+            {"name": "Oxidized Copper", "albedo": (0.3, 0.5, 0.4), "metallic": 0.3, "roughness": 0.7},
+            {"name": "Brushed Aluminum", "albedo": (0.9, 0.9, 0.9), "metallic": 1.0, "roughness": 0.4},
+            {"name": "Galvanized Steel", "albedo": (0.7, 0.7, 0.7), "metallic": 1.0, "roughness": 0.3},
+            {"name": "Brass", "albedo": (0.88, 0.78, 0.50), "metallic": 1.0, "roughness": 0.1},
+            {"name": "Bronze", "albedo": (0.80, 0.50, 0.20), "metallic": 1.0, "roughness": 0.2},
+            {"name": "Scratched Steel", "albedo": (0.5, 0.5, 0.5), "metallic": 1.0, "roughness": 0.35},
+            {"name": "Cast Iron", "albedo": (0.2, 0.2, 0.2), "metallic": 1.0, "roughness": 0.6},
+            {"name": "Gunmetal", "albedo": (0.3, 0.3, 0.35), "metallic": 1.0, "roughness": 0.25},
+            {"name": "Lead", "albedo": (0.4, 0.4, 0.42), "metallic": 1.0, "roughness": 0.5},
+
+            # Group 3: Glossy Plastics (Dielectrics, Roughness 0.1-0.2)
+            {"name": "Glossy Red", "albedo": (1.0, 0.0, 0.0), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Glossy Green", "albedo": (0.0, 1.0, 0.0), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Glossy Blue", "albedo": (0.0, 0.0, 1.0), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Glossy Yellow", "albedo": (1.0, 1.0, 0.0), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Glossy Cyan", "albedo": (0.0, 1.0, 1.0), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Glossy Magenta", "albedo": (1.0, 0.0, 1.0), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Glossy Black", "albedo": (0.02, 0.02, 0.02), "metallic": 0.0, "roughness": 0.05},
+            {"name": "Glossy White", "albedo": (0.98, 0.98, 0.98), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Glossy Orange", "albedo": (1.0, 0.5, 0.0), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Glossy Purple", "albedo": (0.5, 0.0, 1.0), "metallic": 0.0, "roughness": 0.1},
+
+            # Group 4: Matte Plastics (Dielectrics, Roughness 0.5-0.9)
+            {"name": "Matte Red", "albedo": (1.0, 0.1, 0.1), "metallic": 0.0, "roughness": 0.7},
+            {"name": "Matte Green", "albedo": (0.1, 0.8, 0.1), "metallic": 0.0, "roughness": 0.7},
+            {"name": "Matte Blue", "albedo": (0.1, 0.1, 1.0), "metallic": 0.0, "roughness": 0.7},
+            {"name": "Matte Grey", "albedo": (0.4, 0.4, 0.4), "metallic": 0.0, "roughness": 0.7},
+            {"name": "Matte Cream", "albedo": (0.9, 0.85, 0.7), "metallic": 0.0, "roughness": 0.8},
+            {"name": "Matte Navy", "albedo": (0.0, 0.1, 0.3), "metallic": 0.0, "roughness": 0.85},
+            {"name": "Matte Forest", "albedo": (0.1, 0.25, 0.1), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Matte Maroon", "albedo": (0.3, 0.0, 0.0), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Matte Teal", "albedo": (0.0, 0.4, 0.4), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Matte Sand", "albedo": (0.76, 0.7, 0.5), "metallic": 0.0, "roughness": 0.95},
+
+            # Group 5: Minerals & Rocks
+            {"name": "Charcoal", "albedo": (0.05, 0.05, 0.05), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Coal", "albedo": (0.1, 0.1, 0.1), "metallic": 0.0, "roughness": 0.4},
+            {"name": "Obsidian", "albedo": (0.02, 0.02, 0.03), "metallic": 0.0, "roughness": 0.05},
+            {"name": "Granite", "albedo": (0.4, 0.4, 0.45), "metallic": 0.0, "roughness": 0.6},
+            {"name": "Marble", "albedo": (0.9, 0.9, 0.92), "metallic": 0.0, "roughness": 0.15},
+            {"name": "Basalt", "albedo": (0.2, 0.2, 0.22), "metallic": 0.0, "roughness": 0.8},
+            {"name": "Sandstone", "albedo": (0.8, 0.7, 0.5), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Emerald Color", "albedo": (0.2, 0.8, 0.3), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Ruby Color", "albedo": (0.8, 0.1, 0.2), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Sapphire Color", "albedo": (0.1, 0.2, 0.8), "metallic": 0.0, "roughness": 0.1},
+
+            # Group 6: Woods & Organic
+            {"name": "Oak", "albedo": (0.4, 0.25, 0.15), "metallic": 0.0, "roughness": 0.75},
+            {"name": "Mahogany", "albedo": (0.3, 0.1, 0.05), "metallic": 0.0, "roughness": 0.6},
+            {"name": "Pine", "albedo": (0.7, 0.6, 0.3), "metallic": 0.0, "roughness": 0.8},
+            {"name": "Ebony", "albedo": (0.02, 0.02, 0.02), "metallic": 0.0, "roughness": 0.3},
+            {"name": "Leather", "albedo": (0.2, 0.1, 0.05), "metallic": 0.0, "roughness": 0.7},
+            {"name": "Dry Soil", "albedo": (0.3, 0.2, 0.15), "metallic": 0.0, "roughness": 0.98},
+            {"name": "Wet Soil", "albedo": (0.1, 0.07, 0.05), "metallic": 0.0, "roughness": 0.8},
+            {"name": "Grass Color", "albedo": (0.2, 0.4, 0.1), "metallic": 0.0, "roughness": 0.95},
+            {"name": "Clay", "albedo": (0.5, 0.3, 0.2), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Bone", "albedo": (0.9, 0.88, 0.8), "metallic": 0.0, "roughness": 0.6},
+
+            # Group 7: Paints & Coatings
+            {"name": "Car Paint Red", "albedo": (0.8, 0.0, 0.0), "metallic": 0.2, "roughness": 0.1},
+            {"name": "Met. Blue Paint", "albedo": (0.1, 0.1, 0.8), "metallic": 0.8, "roughness": 0.2},
+            {"name": "Met. Green Paint", "albedo": (0.1, 0.6, 0.1), "metallic": 0.7, "roughness": 0.25},
+            {"name": "Pearl White", "albedo": (0.95, 0.95, 1.0), "metallic": 0.1, "roughness": 0.1},
+            {"name": "Satin Black", "albedo": (0.05, 0.05, 0.05), "metallic": 0.0, "roughness": 0.4},
+            {"name": "Satin Silver", "albedo": (0.8, 0.8, 0.8), "metallic": 0.5, "roughness": 0.4},
+            {"name": "Hammered Metal", "albedo": (0.4, 0.4, 0.4), "metallic": 1.0, "roughness": 0.5},
+            {"name": "Primer Grey", "albedo": (0.3, 0.3, 0.3), "metallic": 0.0, "roughness": 0.8},
+            {"name": "Safety Orange", "albedo": (1.0, 0.4, 0.0), "metallic": 0.0, "roughness": 0.2},
+            {"name": "Deep Blue", "albedo": (0.0, 0.05, 0.2), "metallic": 0.0, "roughness": 0.3},
+
+            # Group 8: Synthetic & Tech
+            {"name": "Rubber", "albedo": (0.05, 0.05, 0.05), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Silicon", "albedo": (0.3, 0.3, 0.3), "metallic": 0.8, "roughness": 0.1},
+            {"name": "Carbon", "albedo": (0.05, 0.05, 0.05), "metallic": 0.0, "roughness": 0.3},
+            {"name": "Ceramic Gloss", "albedo": (0.9, 0.9, 0.95), "metallic": 0.0, "roughness": 0.05},
+            {"name": "Bakelite", "albedo": (0.1, 0.02, 0.0), "metallic": 0.0, "roughness": 0.2},
+            {"name": "Vinyl", "albedo": (0.1, 0.1, 0.1), "metallic": 0.0, "roughness": 0.3},
+            {"name": "Teflon", "albedo": (0.95, 0.95, 0.95), "metallic": 0.0, "roughness": 0.4},
+            {"name": "Acrylic", "albedo": (0.1, 0.1, 0.1), "metallic": 0.0, "roughness": 0.05},
+            {"name": "Nylon", "albedo": (0.8, 0.8, 0.8), "metallic": 0.0, "roughness": 0.5},
+            {"name": "Kevlar Color", "albedo": (0.6, 0.5, 0.1), "metallic": 0.0, "roughness": 0.8},
+
+            # Group 9: Variations (Metals)
+            {"name": "Old Gold", "albedo": (0.8, 0.6, 0.2), "metallic": 0.9, "roughness": 0.5},
+            {"name": "Dirty Silver", "albedo": (0.6, 0.6, 0.6), "metallic": 1.0, "roughness": 0.6},
+            {"name": "Burnt Steel", "albedo": (0.4, 0.4, 0.5), "metallic": 1.0, "roughness": 0.3},
+            {"name": "Anodized Red", "albedo": (1.0, 0.1, 0.1), "metallic": 1.0, "roughness": 0.4},
+            {"name": "Anodized Blue", "albedo": (0.1, 0.1, 1.0), "metallic": 1.0, "roughness": 0.4},
+            {"name": "Anodized Green", "albedo": (0.1, 1.0, 0.1), "metallic": 1.0, "roughness": 0.4},
+            {"name": "Tarnished Brass", "albedo": (0.5, 0.4, 0.2), "metallic": 1.0, "roughness": 0.7},
+            {"name": "Polished Bronze", "albedo": (0.9, 0.6, 0.3), "metallic": 1.0, "roughness": 0.1},
+            {"name": "Rough Steel", "albedo": (0.4, 0.4, 0.4), "metallic": 1.0, "roughness": 0.9},
+            {"name": "Mirror", "albedo": (1.0, 1.0, 1.0), "metallic": 1.0, "roughness": 0.0},
+
+            # Group 10: Misc & Fun
+            {"name": "Snow Color", "albedo": (0.98, 0.98, 1.0), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Ice Color", "albedo": (0.8, 0.9, 1.0), "metallic": 0.0, "roughness": 0.1},
+            {"name": "Lava Color", "albedo": (1.0, 0.2, 0.0), "metallic": 0.0, "roughness": 0.3},
+            {"name": "Slate", "albedo": (0.2, 0.2, 0.25), "metallic": 0.0, "roughness": 0.7},
+            {"name": "Sand", "albedo": (0.9, 0.8, 0.5), "metallic": 0.0, "roughness": 0.9},
+            {"name": "Terracotta", "albedo": (0.7, 0.4, 0.3), "metallic": 0.0, "roughness": 0.8},
+            {"name": "Skin Tone 1", "albedo": (0.8, 0.6, 0.5), "metallic": 0.0, "roughness": 0.6},
+            {"name": "Skin Tone 2", "albedo": (0.4, 0.2, 0.15), "metallic": 0.0, "roughness": 0.6},
+            {"name": "Velvet Red", "albedo": (0.5, 0.0, 0.1), "metallic": 0.0, "roughness": 0.95},
+            {"name": "Velvet Blue", "albedo": (0.0, 0.1, 0.5), "metallic": 0.0, "roughness": 0.95},
+        ]
+        self.ui_render_mode_options = ["Grid (Metallic/Roughness Interpolation)", "Material Presets"]
+        self.ui_render_mode = 0
+
         self.wnd.mouse_exclusivity = True
         self.wnd.fullscreen_key = self.wnd.keys.F
 
@@ -513,25 +637,45 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prefiltered_specular_map.use(location=1)
         self.brdf_lut_texture.use(location=2)
 
-        nr_rows = self.ui_nr_rows
-        nr_columns = self.ui_nr_columns
-        spacing = self.ui_spacing
-        # // render rows*column number of spheres with varying metallic/roughness values
-        # // scaled by rows and columns respectively
-        for row in range(nr_rows):
-            self.prog_pbr_lighting["metallic"].value = float(row) / float(nr_rows)
-            for col in range(nr_columns):
+        if self.ui_render_mode == 0:
+            # Grid Mode: Varying metallic/roughness values
+            nr_rows = self.ui_nr_rows
+            nr_columns = self.ui_nr_columns
+            spacing = self.ui_spacing
+            for row in range(nr_rows):
+                self.prog_pbr_lighting["metallic"].value = float(row) / float(nr_rows)
+                for col in range(nr_columns):
+                    model = glm.translate(
+                        glm.vec3(
+                            (col - (nr_columns / 2)) * spacing, (row - (nr_rows / 2)) * spacing, 0.0
+                        )
+                    )
+                    self.prog_pbr_lighting["roughness"].value = glm.clamp(
+                        float(col) / float(nr_columns), 0.05, 1.0
+                    )
+                    self.prog_pbr_lighting["model"].write(model)
+                    self.prog_pbr_lighting["normalMatrix"].write(
+                        glm.transpose(glm.inverse(glm.mat3(model)))
+                    )
+                    self.sphere.render(self.prog_pbr_lighting)
+        else:
+            # Presets Mode: Fixed material properties (10x10 grid)
+            spacing = self.ui_spacing
+            cols = 10
+            rows = 10
+            for i, mat in enumerate(self.MATERIAL_PRESETS):
+                if i >= cols * rows:
+                    break
+                row = i // cols
+                col = i % cols
                 model = glm.translate(
                     glm.vec3(
-                        (col - (nr_columns / 2)) * spacing, (row - (nr_rows / 2)) * spacing, 0.0
+                        (col - (cols / 2)) * spacing, (row - (rows / 2)) * spacing, 0.0
                     )
                 )
-                # // we clamp the roughness to 0.05 - 1.0 as perfectly smooth surfaces
-                # // (roughness of 0.0) tend to look a bit off on direct lighting.
-                self.prog_pbr_lighting["roughness"].value = glm.clamp(
-                    float(col) / float(nr_columns), 0.05, 1.0
-                )
-                # logger.debug(f'{self.prog_pbr_lighting["roughness"].value=}')
+                self.prog_pbr_lighting["albedo"].value = mat["albedo"]
+                self.prog_pbr_lighting["metallic"].value = mat["metallic"]
+                self.prog_pbr_lighting["roughness"].value = mat["roughness"]
                 self.prog_pbr_lighting["model"].write(model)
                 self.prog_pbr_lighting["normalMatrix"].write(
                     glm.transpose(glm.inverse(glm.mat3(model)))
@@ -629,12 +773,15 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             )
         imgui.separator()
 
-        _, self.ui_albedo = imgui.color_edit3("Albedo", self.ui_albedo)
+        _, self.ui_render_mode = imgui.combo("Render Mode", self.ui_render_mode, self.ui_render_mode_options)
+
+        if self.ui_render_mode == 0:
+            _, self.ui_albedo = imgui.color_edit3("Albedo", self.ui_albedo)
+            _, self.ui_nr_rows = imgui.slider_int("Number of Rows", self.ui_nr_rows, 1, 10)
+            _, self.ui_nr_columns = imgui.slider_int("Number of Columns", self.ui_nr_columns, 1, 10)
+        _, self.ui_spacing = imgui.slider_float("Spacing", self.ui_spacing, 1.0, 10.0)
         _, self.ui_ao = imgui.slider_float("Ambient Occlusion", self.ui_ao, 0.05, 10.0)
         _, self.ui_exposure = imgui.slider_float("Exposure", self.ui_exposure, 1.0, 1.5)
-        _, self.ui_nr_rows = imgui.slider_int("Number of Rows", self.ui_nr_rows, 1, 10)
-        _, self.ui_nr_columns = imgui.slider_int("Number of Columns", self.ui_nr_columns, 1, 10)
-        _, self.ui_spacing = imgui.slider_float("Spacing", self.ui_spacing, 1.0, 10.0)
 
         imgui.text("Sphere Mesh (Geodesic)")
         changed1, self.ui_sphere_subdivisions = imgui.slider_int(
