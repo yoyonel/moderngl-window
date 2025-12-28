@@ -354,7 +354,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         if self.ui_wireframe_enabled:
             self.ctx.wireframe = True
-        self.render_spheres()
+        self.render_spheres(time)
         if self.ui_wireframe_enabled:
             self.ctx.wireframe = False
 
@@ -551,11 +551,11 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         # This is a bit manual, but required by moderngl-window's integration
         self.imgui.register_texture(self.brdf_lut_texture)
 
-    def render_spheres(self):
+    def render_spheres(self, time):
         self.prog_pbr_lighting["projection"].write(self.camera.projection.matrix)
         self.prog_pbr_lighting["view"].write(self.camera.matrix)
         self.prog_pbr_lighting["camPos"].write(self.camera.position)
-        self.prog_pbr_lighting["time"] = self.wnd.time
+        self.prog_pbr_lighting["time"] = time
 
         # Optimize uniforms: only update if changed (local state tracking)
         if self._last_exposure != self.ui_exposure:

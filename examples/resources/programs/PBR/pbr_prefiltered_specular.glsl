@@ -208,20 +208,36 @@ vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, i
         }
         vec3 lightUp = normalize(cross(lightRight, lightToSurf));
         
-        // Apply time-based rotation around the local Z axis (lightToSurf)
-        float angle = time * 0.5;  // Slow rotation
-        float cosA = cos(angle);
-        float sinA = sin(angle);
-        vec3 rotatedRight = lightRight * cosA + lightUp * sinA;
-        vec3 rotatedUp = -lightRight * sinA + lightUp * cosA;
+        // Apply multi-axis time-based rotation for dynamic effect
+        float angleX = time * 0.3;  // Rotation around lightRight
+        float angleY = time * 0.5;  // Rotation around lightUp
+        float angleZ = time * 0.4;  // Rotation around lightToSurf
         
-        // Define the 4 corners (square facing the surface, rotated)
+        // Rotation around X (lightRight axis)
+        float cosX = cos(angleX);
+        float sinX = sin(angleX);
+        vec3 tempUp = lightUp * cosX + lightToSurf * sinX;
+        vec3 tempToSurf = -lightUp * sinX + lightToSurf * cosX;
+        
+        // Rotation around Y (new up axis)
+        float cosY = cos(angleY);
+        float sinY = sin(angleY);
+        vec3 rotatedRight = lightRight * cosY - tempToSurf * sinY;
+        vec3 finalToSurf = lightRight * sinY + tempToSurf * cosY;
+        
+        // Rotation around Z (final forward axis)
+        float cosZ = cos(angleZ);
+        float sinZ = sin(angleZ);
+        vec3 finalRight = rotatedRight * cosZ + tempUp * sinZ;
+        vec3 finalUp = -rotatedRight * sinZ + tempUp * cosZ;
+        
+        // Define the 4 corners (square with multi-axis rotation)
         float hw = lightRadius;
         vec3 points[4];
-        points[0] = lightPosition + (-rotatedRight - rotatedUp) * hw;
-        points[1] = lightPosition + (rotatedRight - rotatedUp) * hw;
-        points[2] = lightPosition + (rotatedRight + rotatedUp) * hw;
-        points[3] = lightPosition + (-rotatedRight + rotatedUp) * hw;
+        points[0] = lightPosition + (-finalRight - finalUp) * hw;
+        points[1] = lightPosition + (finalRight - finalUp) * hw;
+        points[2] = lightPosition + (finalRight + finalUp) * hw;
+        points[3] = lightPosition + (-finalRight + finalUp) * hw;
         
         // Sample LTC LUTs
         float NdotV = clamp(dot(N, V), 0.0, 1.0);
