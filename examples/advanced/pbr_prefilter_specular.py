@@ -659,10 +659,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                     )
                     self.sphere.render(self.prog_pbr_lighting)
         else:
-            # Presets Mode: Fixed material properties (10x10 grid)
+            # Presets Mode: Fixed material properties
             spacing = self.ui_spacing
-            cols = 10
-            rows = 10
+            cols = self.ui_nr_columns
+            rows = self.ui_nr_rows
             for i, mat in enumerate(self.MATERIAL_PRESETS):
                 if i >= cols * rows:
                     break
@@ -777,8 +777,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         if self.ui_render_mode == 0:
             _, self.ui_albedo = imgui.color_edit3("Albedo", self.ui_albedo)
-            _, self.ui_nr_rows = imgui.slider_int("Number of Rows", self.ui_nr_rows, 1, 10)
-            _, self.ui_nr_columns = imgui.slider_int("Number of Columns", self.ui_nr_columns, 1, 10)
+        
+        _, self.ui_nr_rows = imgui.slider_int("Number of Rows", self.ui_nr_rows, 1, 10)
+        _, self.ui_nr_columns = imgui.slider_int("Number of Columns", self.ui_nr_columns, 1, 10)
         _, self.ui_spacing = imgui.slider_float("Spacing", self.ui_spacing, 1.0, 10.0)
         _, self.ui_ao = imgui.slider_float("Ambient Occlusion", self.ui_ao, 0.05, 10.0)
         _, self.ui_exposure = imgui.slider_float("Exposure", self.ui_exposure, 1.0, 1.5)
@@ -808,8 +809,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if self.ui_render_mode == 1:
             draw_list = imgui.get_foreground_draw_list()
             spacing = self.ui_spacing
-            cols = 10
-            rows = 10
+            cols = self.ui_nr_columns
+            rows = self.ui_nr_rows
             
             # View-Projection for labels
             mvp = self.camera.projection.matrix * self.camera.matrix
