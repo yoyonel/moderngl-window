@@ -59,6 +59,8 @@ in float SphereRadius;
 in vec3 CenterVS;
 
 uniform bool use_billboarding;
+uniform bool use_area_lights;
+uniform float lightRadius;
 uniform mat4 projection;
 uniform mat4 view;
 
@@ -144,16 +146,32 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
 // ----------------------------------------------------------------------------
 vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, in vec3 V, in vec3 R, in vec3 F0, in vec3 pos)
 {
-    // calculate per-light radiance
     vec3 L = normalize(lightPosition - pos);
-    vec3 H = normalize(V + L);
     float distance      = length(lightPosition - pos);
+
+    // If Area Lights are enabled, calculate the Most Representative Point (MRP) on the light sphere
+    if (use_area_lights && lightRadius > 0.0) {
+        vec3 centerToRay = dot(lightPosition - pos, R) * R - (lightPosition - pos);
+        vec3 closestPoint = (lightPosition - pos) + centerToRay * clamp(lightRadius / length(centerToRay), 0.0, 1.0);
+        L = normalize(closestPoint);
+        // Distance to the closest point for attenuation (approx)
+        distance = length(closestPoint);
+    }
+    
+    vec3 H = normalize(V + L);
     float attenuation   = 1.0 / (distance * distance);
     vec3 radiance       = lightColor * attenuation;
     
     // Clamp roughness for analytical lights to ensure highlights are visible 
     // and numerically stable even for mirror-like materials.
     float clampedRoughness = max(roughness, 0.02);
+    
+    // Adjust roughness for area light size to maintain energy conservation 
+    // and avoid highlights smaller than the light itself.
+    if (use_area_lights && lightRadius > 0.0) {
+        float dist = length(lightPosition - pos);
+        clampedRoughness = max(clampedRoughness, lightRadius / (2.0 * dist));
+    }
 
     // Cook-Torrance BRDF
     float NDF = DistributionGGX(N, H, clampedRoughness);

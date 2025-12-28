@@ -130,6 +130,11 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["ao"] = self.ui_ao
         self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
         self.prog_pbr_lighting["use_billboarding"] = self.ui_use_billboarding
+        
+        self.ui_use_area_lights = False
+        self.ui_light_radius = 0.5
+        self.prog_pbr_lighting["use_area_lights"] = self.ui_use_area_lights
+        self.prog_pbr_lighting["lightRadius"] = self.ui_light_radius
 
         self.backgroundShader = self.load_program("programs/PBR/background.glsl")
         self.backgroundShader["environmentMap"].value = 0
@@ -169,6 +174,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self._last_albedo = tuple(self.ui_albedo)
         self._last_ao = self.ui_ao
         self._last_use_billboarding = self.ui_use_billboarding
+        self._last_use_area_lights = self.ui_use_area_lights
+        self._last_light_radius = self.ui_light_radius
 
     @classmethod
     def add_arguments(cls, parser):
@@ -533,6 +540,14 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             self.prog_pbr_lighting["use_billboarding"].value = self.ui_use_billboarding
             self._last_use_billboarding = self.ui_use_billboarding
 
+        if self._last_use_area_lights != self.ui_use_area_lights:
+            self.prog_pbr_lighting["use_area_lights"].value = self.ui_use_area_lights
+            self._last_use_area_lights = self.ui_use_area_lights
+
+        if self._last_light_radius != self.ui_light_radius:
+            self.prog_pbr_lighting["lightRadius"].value = self.ui_light_radius
+            self._last_light_radius = self.ui_light_radius
+
         self.irradiance_map_cubemap.use(location=0)
         self.prefiltered_specular_map.use(location=1)
         self.brdf_lut_texture.use(location=2)
@@ -695,6 +710,11 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         _, self.ui_use_billboarding = imgui.checkbox(
             "Raytraced Billboards", self.ui_use_billboarding
         )
+
+        imgui.separator()
+        imgui.text("Area Lights (MRP)")
+        _, self.ui_use_area_lights = imgui.checkbox("Use Area Lights", self.ui_use_area_lights)
+        _, self.ui_light_radius = imgui.slider_float("Light Radius", self.ui_light_radius, 0.0, 5.0)
 
         imgui.text("Sphere Mesh (Legacy Settings)")
         changed1, self.ui_sphere_subdivisions = imgui.slider_int(
