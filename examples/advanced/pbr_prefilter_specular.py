@@ -1,8 +1,8 @@
 """
 - https://learnopengl.com/PBR/IBL/Diffuse-irradiance
+- https://google.github.io/filament/main/filament.html
 
 TODO:
-- understand and remove bug => black pixels appears around edges, with the LUT texture
 - replace triangulates spheres with billboards
 """
 
@@ -80,6 +80,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             subdivisions=self.ui_sphere_subdivisions,
             randomization=self.ui_sphere_irregularity,
         )
+        self.quad = geometry.quad_2d(size=(2.0, 2.0))
+        self.ui_use_billboarding = True
         # with cubes no black pixels problem, certainly a problem a mesh definition/precision
         # self.sphere = geometry.cube(size=(2.0, 2.0, 2.0))
 
@@ -127,6 +129,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["albedo"] = self.ui_albedo
         self.prog_pbr_lighting["ao"] = self.ui_ao
         self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
+        self.prog_pbr_lighting["use_billboarding"] = self.ui_use_billboarding
 
         self.backgroundShader = self.load_program("programs/PBR/background.glsl")
         self.backgroundShader["environmentMap"].value = 0
@@ -165,6 +168,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self._last_debug_mode = self.ui_visualization_mode
         self._last_albedo = tuple(self.ui_albedo)
         self._last_ao = self.ui_ao
+        self._last_use_billboarding = self.ui_use_billboarding
 
     @classmethod
     def add_arguments(cls, parser):
@@ -325,12 +329,6 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                 self.render_skybox(
                     self.prefiltered_specular_map, lod=1.0
                 )  # Show a mip level for prefilter
-
-        # TODO: construct a debug view for this resources
-        # self.render_skybox(self.env_cubemap)
-        # self.render_skybox(self.irradiance_map_cubemap)
-        # self.render_skybox(self.prefiltered_specular_map)
-        # self.render_skybox(self.brdf_lut_texture)
 
         assert self.ctx.error == "GL_NO_ERROR", self.ctx.error
 
@@ -531,6 +529,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             self.prog_pbr_lighting["ao"].value = self.ui_ao
             self._last_ao = self.ui_ao
 
+        if self._last_use_billboarding != self.ui_use_billboarding:
+            self.prog_pbr_lighting["use_billboarding"].value = self.ui_use_billboarding
+            self._last_use_billboarding = self.ui_use_billboarding
+
         self.irradiance_map_cubemap.use(location=0)
         self.prefiltered_specular_map.use(location=1)
         self.brdf_lut_texture.use(location=2)
@@ -555,7 +557,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                     self.prog_pbr_lighting["normalMatrix"].write(
                         glm.transpose(glm.inverse(glm.mat3(model)))
                     )
-                    self.sphere.render(self.prog_pbr_lighting)
+                    if self.ui_use_billboarding:
+                        self.quad.render(self.prog_pbr_lighting)
+                    else:
+                        self.sphere.render(self.prog_pbr_lighting)
         else:
             # Presets Mode: Fixed material properties
             spacing = self.ui_spacing
@@ -576,7 +581,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                 self.prog_pbr_lighting["normalMatrix"].write(
                     glm.transpose(glm.inverse(glm.mat3(model)))
                 )
-                self.sphere.render(self.prog_pbr_lighting)
+                if self.ui_use_billboarding:
+                    self.quad.render(self.prog_pbr_lighting)
+                else:
+                    self.sphere.render(self.prog_pbr_lighting)
 
     def render_skybox(self, cubemap: moderngl.TextureCube, lod: float = 0.0):
         skybox_cam = self.camera.matrix
@@ -683,7 +691,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         _, self.ui_ao = imgui.slider_float("Ambient Occlusion", self.ui_ao, 0.05, 10.0)
         _, self.ui_exposure = imgui.slider_float("Exposure", self.ui_exposure, 1.0, 1.5)
 
-        imgui.text("Sphere Mesh (Geodesic)")
+        imgui.separator()
+        _, self.ui_use_billboarding = imgui.checkbox("Raytraced Billboards", self.ui_use_billboarding)
+
+        imgui.text("Sphere Mesh (Legacy Settings)")
         changed1, self.ui_sphere_subdivisions = imgui.slider_int(
             "Subdivisions", self.ui_sphere_subdivisions, 0, 6
         )

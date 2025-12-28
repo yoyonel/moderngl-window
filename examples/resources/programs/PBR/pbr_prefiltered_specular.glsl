@@ -14,13 +14,37 @@ uniform mat4 projection;
 uniform mat4 view;
 uniform mat4 model;
 uniform mat3 normalMatrix;
+uniform bool use_billboarding;
+
+out vec2 LocalPos;
+out float SphereRadius;
+out vec3 CenterVS;
 
 void main() {
     TexCoords = in_texcoord_0;
-    WorldPos = vec3(model * vec4(in_position, 1.0));
-    Normal = normalize(normalMatrix * in_normal);
-
-    gl_Position =  projection * view * vec4(WorldPos, 1.0);
+    
+    if (use_billboarding) {
+        vec3 center_world = vec3(model * vec4(0.0, 0.0, 0.0, 1.0));
+        float radius = length(model[0].xyz); // Assume uniform scale
+        
+        vec3 center_vs = vec3(view * vec4(center_world, 1.0));
+        // Increase quad size to 3.0x radius to avoid clipping spherical silhouette in perspective
+        vec3 pos_vs = center_vs + vec3(in_position.xy * radius * 3.0, 0.0);
+        
+        LocalPos = in_position.xy * 3.0;
+        SphereRadius = radius;
+        CenterVS = center_vs;
+        
+        // Pass a dummy WorldPos/Normal for now, will be recalculated in FS
+        WorldPos = vec3(inverse(view) * vec4(pos_vs, 1.0));
+        Normal = vec3(0.0, 0.0, 1.0);
+        
+        gl_Position = projection * vec4(pos_vs, 1.0);
+    } else {
+        WorldPos = vec3(model * vec4(in_position, 1.0));
+        Normal = normalize(normalMatrix * in_normal);
+        gl_Position =  projection * view * vec4(WorldPos, 1.0);
+    }
 }
 
 #elif defined FRAGMENT_SHADER
@@ -29,6 +53,14 @@ out vec4 FragColor;
 in vec2 TexCoords;
 in vec3 WorldPos;
 in vec3 Normal;
+
+in vec2 LocalPos;
+in float SphereRadius;
+in vec3 CenterVS;
+
+uniform bool use_billboarding;
+uniform mat4 projection;
+uniform mat4 view;
 
 // material parameters
 uniform vec3 albedo;
@@ -110,12 +142,12 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 // ----------------------------------------------------------------------------
-vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, in vec3 V, in vec3 R, in vec3 F0)
+vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, in vec3 V, in vec3 R, in vec3 F0, in vec3 pos)
 {
     // calculate per-light radiance
-    vec3 L = normalize(lightPosition - WorldPos);
+    vec3 L = normalize(lightPosition - pos);
     vec3 H = normalize(V + L);
-    float distance      = length(lightPosition - WorldPos);
+    float distance      = length(lightPosition - pos);
     float attenuation   = 1.0 / (distance * distance);
     vec3 radiance       = lightColor * attenuation;
 
@@ -192,8 +224,58 @@ vec3 Tonemap_DisplayRange(const vec3 x) {
 // ----------------------------------------------------------------------------
 void main()
 {
-    vec3 N = normalize(Normal);
-    vec3 V = normalize(camPos - WorldPos);
+    vec3 N;
+    vec3 V;
+    vec3 fragWorldPos = WorldPos;
+
+    if (use_billboarding) {
+        // Ray-Sphere intersection in View Space
+        // Ray origin at camera (0,0,0)
+        vec3 O = vec3(0.0);
+        // Ray direction through current fragment on the billboard quad
+        vec3 P = CenterVS + vec3(LocalPos.x, LocalPos.y, 0.0) * SphereRadius;
+        vec3 D = normalize(P - O);
+        
+        // Sphere center and radius
+        vec3 C = CenterVS;
+        float R = SphereRadius;
+        
+        // Quadratic: t^2 - 2t(D.C) + C.C - R^2 = 0
+        float b = -2.0 * dot(D, C);
+        float c = dot(C, C) - R * R;
+        float delta = b * b - 4.0 * c;
+        
+        if (delta < 0.0) discard;
+        
+        float t = (-b - sqrt(delta)) / 2.0;
+        if (t < 0.0) discard;
+        
+        // Hit point in View Space
+        vec3 hit_vs = O + t * D;
+        
+        // Hit normal in View Space
+        vec3 normal_vs = normalize(hit_vs - C);
+        
+        // Normal in World Space
+        mat3 invView = mat3(inverse(view));
+        N = normalize(invView * normal_vs);
+        
+        // World Position
+        fragWorldPos = (inverse(view) * vec4(hit_vs, 1.0)).xyz;
+        
+        // View direction
+        V = normalize(camPos - fragWorldPos);
+        
+        // Update Depth
+        vec4 clip_pos = projection * vec4(hit_vs, 1.0);
+        gl_FragDepth = (clip_pos.z / clip_pos.w) * 0.5 + 0.5;
+    } else {
+        N = normalize(Normal);
+        V = normalize(camPos - WorldPos);
+        // Standard depth is automatically written
+        gl_FragDepth = gl_FragCoord.z;
+    }
+
     vec3 R = reflect(-V, N);
 
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0
@@ -204,7 +286,7 @@ void main()
     // apply reflectance equation for each light
     vec3 Lo = vec3(0.0);
     for (int i = 0; i < 4; ++i) {
-        Lo += compute_reflectance(lightPositions[i], lightColors[i], N, V, R, F0);
+        Lo += compute_reflectance(lightPositions[i], lightColors[i], N, V, R, F0, fragWorldPos);
     }
 
     // ambient lighting (we now use IBL as the ambient term)
