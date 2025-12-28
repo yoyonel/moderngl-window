@@ -803,6 +803,52 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         )
 
         imgui.end()
+
+        # Draw labels for Material Presets
+        if self.ui_render_mode == 1:
+            draw_list = imgui.get_foreground_draw_list()
+            spacing = self.ui_spacing
+            cols = 10
+            rows = 10
+            
+            # View-Projection for labels
+            mvp = self.camera.projection.matrix * self.camera.matrix
+            width, height = self.wnd.size
+
+            for i, mat in enumerate(self.MATERIAL_PRESETS):
+                if i >= cols * rows:
+                    break
+                row = i // cols
+                col = i % cols
+                
+                # Sphere center world pos (matching render_spheres)
+                world_pos = glm.vec3(
+                    (col - (cols / 2)) * spacing, (row - (rows / 2)) * spacing, 0.0
+                )
+                
+                # Project to clip space
+                clip_pos = mvp * glm.vec4(world_pos, 1.0)
+                
+                # Check if visible (in front of camera)
+                if clip_pos.w > 0:
+                    # Normalized Device Coordinates (NDC)
+                    ndc = glm.vec3(clip_pos) / clip_pos.w
+                    
+                    # Check if within screen bounds (roughly)
+                    if -1.0 <= ndc.x <= 1.0 and -1.0 <= ndc.y <= 1.0:
+                        # Convert to screen coordinates (Imgui uses pixel coords from top-left)
+                        screen_x = (ndc.x + 1.0) * 0.5 * width
+                        screen_y = (1.0 - ndc.y) * 0.5 * height
+                        
+                        # Draw centered text slightly below the sphere
+                        text = mat["name"]
+                        text_size = imgui.calc_text_size(text)
+                        pos = imgui.ImVec2(screen_x - text_size.x * 0.5, screen_y + 20)
+                        
+                        # Draw shadow for readability
+                        draw_list.add_text(imgui.ImVec2(pos.x + 1, pos.y + 1), imgui.get_color_u32(imgui.ImVec4(0, 0, 0, 1)), text)
+                        draw_list.add_text(pos, imgui.get_color_u32(imgui.ImVec4(1, 1, 1, 1)), text)
+
         imgui.render()
         self.imgui.render(imgui.get_draw_data())
 
