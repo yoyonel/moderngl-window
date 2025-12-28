@@ -59,10 +59,14 @@ in float SphereRadius;
 in vec3 CenterVS;
 
 uniform bool use_billboarding;
-uniform bool use_area_lights;
+uniform int light_mode;  // 0=Point, 1=MRP Spherical, 2=LTC Rectangular
 uniform float lightRadius;
 uniform mat4 projection;
 uniform mat4 view;
+
+// LTC
+uniform sampler2D ltc_mat;
+uniform sampler2D ltc_amp;
 
 // material parameters
 uniform vec3 albedo;
@@ -144,13 +148,114 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 // ----------------------------------------------------------------------------
+// LTC Helper Functions
+// ----------------------------------------------------------------------------
+float IntegrateEdge(vec3 v1, vec3 v2)
+{
+    float cosTheta = dot(v1, v2);
+    cosTheta = clamp(cosTheta, -0.9999, 0.9999);
+    float theta = acos(cosTheta);
+    float res = cross(v1, v2).z * ((theta > 0.001) ? theta / sin(theta) : 1.0);
+    return res;
+}
+
+vec3 LTC_Evaluate(vec3 N, vec3 V, vec3 P, mat3 Minv, vec3 points[4])
+{
+    // Construct orthonormal basis around N
+    vec3 T1 = normalize(V - N * dot(V, N));
+    vec3 T2 = cross(N, T1);
+    
+    // Rotate area light in the tangent frame
+    Minv = Minv * transpose(mat3(T1, T2, N));
+    
+    // Transform polygon vertices
+    vec3 L[4];
+    for (int i = 0; i < 4; i++)
+    {
+        L[i] = Minv * (points[i] - P);
+        L[i] = normalize(L[i]);
+    }
+    
+    // Integrate
+    vec3 dir = points[0] - P;
+    vec3 lightNormal = cross(points[1] - points[0], points[3] - points[0]);
+    bool behind = (dot(dir, lightNormal) < 0.0);
+    
+    if(!behind)
+    {
+        float sum = 0.0;
+        sum += IntegrateEdge(L[0], L[1]);
+        sum += IntegrateEdge(L[1], L[2]);
+        sum += IntegrateEdge(L[2], L[3]);
+        sum += IntegrateEdge(L[3], L[0]);
+        return vec3(max(0.0, sum));
+    }
+    
+    return vec3(0.0);
+}
+// ----------------------------------------------------------------------------
 vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, in vec3 V, in vec3 R, in vec3 F0, in vec3 pos)
 {
+    if (light_mode == 2) {  // LTC Rectangular
+        // Define rectangular light oriented towards the surface
+        vec3 lightToSurf = normalize(pos - lightPosition);
+        
+        // Create an orthonormal basis for the rectangle
+        vec3 lightRight = normalize(cross(lightToSurf, vec3(0.0, 1.0, 0.0)));
+        if (length(lightRight) < 0.001) {
+            lightRight = normalize(cross(lightToSurf, vec3(1.0, 0.0, 0.0)));
+        }
+        vec3 lightUp = normalize(cross(lightRight, lightToSurf));
+        
+        // Define the 4 corners (square facing the surface)
+        float hw = lightRadius;
+        vec3 points[4];
+        points[0] = lightPosition + (-lightRight - lightUp) * hw;
+        points[1] = lightPosition + (lightRight - lightUp) * hw;
+        points[2] = lightPosition + (lightRight + lightUp) * hw;
+        points[3] = lightPosition + (-lightRight + lightUp) * hw;
+        
+        // Sample LTC LUTs
+        float NdotV = clamp(dot(N, V), 0.0, 1.0);
+        float theta = acos(NdotV);
+        vec2 uv = vec2(roughness, theta / (0.5 * 3.14159265359));
+        
+        vec4 t = texture(ltc_mat, uv);
+        mat3 Minv = mat3(
+            vec3(t.x, 0, t.y),
+            vec3(0, 1, 0),
+            vec3(t.z, 0, t.w)
+        );
+        
+        vec2 schlick = texture(ltc_amp, uv).xy;
+        vec3 spec = LTC_Evaluate(N, V, pos, Minv, points);
+        spec *= schlick.x;
+        
+        // Diffuse term uses identity matrix
+        mat3 Mident = mat3(
+            vec3(1, 0, 0),
+            vec3(0, 1, 0),
+            vec3(0, 0, 1)
+        );
+        vec3 diff = LTC_Evaluate(N, V, pos, Mident, points);
+        
+        // Normalize energy based on solid angle
+        // LTC returns integrated irradiance already, we just need to scale by light intensity
+        // The light area affects the result naturally through LTC integration
+        float dist = length(lightPosition - pos);
+        float atten = 1.0 / max(dist * dist, 1.0);
+        
+        // Combine spec and diffuse with proper energy balance
+        vec3 result = lightColor * atten * (spec * F0 + diff * albedo * (1.0 - metallic) / PI);
+        return result;
+    }
+    
+    // Point or MRP modes
     vec3 L = normalize(lightPosition - pos);
     float distance      = length(lightPosition - pos);
 
-    // If Area Lights are enabled, calculate the Most Representative Point (MRP) on the light sphere
-    if (use_area_lights && lightRadius > 0.0) {
+    // If MRP (Spherical Area Lights), calculate the Most Representative Point on the light sphere
+    if (light_mode == 1 && lightRadius > 0.0) {
         vec3 centerToRay = dot(lightPosition - pos, R) * R - (lightPosition - pos);
         vec3 closestPoint = (lightPosition - pos) + centerToRay * clamp(lightRadius / length(centerToRay), 0.0, 1.0);
         L = normalize(closestPoint);
@@ -168,7 +273,7 @@ vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, i
     
     // Adjust roughness for area light size to maintain energy conservation 
     // and avoid highlights smaller than the light itself.
-    if (use_area_lights && lightRadius > 0.0) {
+    if (light_mode == 1 && lightRadius > 0.0) {
         float dist = length(lightPosition - pos);
         clampedRoughness = max(clampedRoughness, lightRadius / (2.0 * dist));
     }
