@@ -222,56 +222,63 @@ vec3 Tonemap_DisplayRange(const vec3 x) {
 }
 
 // ----------------------------------------------------------------------------
+void raytrace_sphere(out vec3 N, out vec3 V, out vec3 fragWorldPos)
+{
+    // Ray-Sphere intersection in View Space
+    // Ray origin at camera (0,0,0)
+    vec3 O = vec3(0.0);
+    // Ray direction through current fragment on the billboard quad
+    vec3 P = CenterVS + vec3(LocalPos.x, LocalPos.y, 0.0) * SphereRadius;
+    vec3 D = normalize(P - O);
+    
+    // Sphere center and radius
+    vec3 C = CenterVS;
+    float R = SphereRadius;
+    
+    // Quadratic: t^2 - 2t(D.C) + C.C - R^2 = 0
+    float b = -2.0 * dot(D, C);
+    float c = dot(C, C) - R * R;
+    float delta = b * b - 4.0 * c;
+    
+    if (delta < 0.0) discard;
+    
+    float t = (-b - sqrt(delta)) / 2.0;
+    if (t < 0.0) discard;
+    
+    // Hit point in View Space
+    vec3 hit_vs = O + t * D;
+    
+    // Hit normal in View Space
+    vec3 normal_vs = normalize(hit_vs - C);
+    
+    // Normal in World Space
+    mat4 invView = inverse(view);
+    N = normalize(mat3(invView) * normal_vs);
+    
+    // World Position
+    fragWorldPos = (invView * vec4(hit_vs, 1.0)).xyz;
+    
+    // View direction
+    V = normalize(camPos - fragWorldPos);
+    
+    // Update Depth
+    vec4 clip_pos = projection * vec4(hit_vs, 1.0);
+    gl_FragDepth = (clip_pos.z / clip_pos.w) * 0.5 + 0.5;
+}
+
+// ----------------------------------------------------------------------------
 void main()
 {
     vec3 N;
     vec3 V;
-    vec3 fragWorldPos = WorldPos;
+    vec3 fragWorldPos;
 
     if (use_billboarding) {
-        // Ray-Sphere intersection in View Space
-        // Ray origin at camera (0,0,0)
-        vec3 O = vec3(0.0);
-        // Ray direction through current fragment on the billboard quad
-        vec3 P = CenterVS + vec3(LocalPos.x, LocalPos.y, 0.0) * SphereRadius;
-        vec3 D = normalize(P - O);
-        
-        // Sphere center and radius
-        vec3 C = CenterVS;
-        float R = SphereRadius;
-        
-        // Quadratic: t^2 - 2t(D.C) + C.C - R^2 = 0
-        float b = -2.0 * dot(D, C);
-        float c = dot(C, C) - R * R;
-        float delta = b * b - 4.0 * c;
-        
-        if (delta < 0.0) discard;
-        
-        float t = (-b - sqrt(delta)) / 2.0;
-        if (t < 0.0) discard;
-        
-        // Hit point in View Space
-        vec3 hit_vs = O + t * D;
-        
-        // Hit normal in View Space
-        vec3 normal_vs = normalize(hit_vs - C);
-        
-        // Normal in World Space
-        mat3 invView = mat3(inverse(view));
-        N = normalize(invView * normal_vs);
-        
-        // World Position
-        fragWorldPos = (inverse(view) * vec4(hit_vs, 1.0)).xyz;
-        
-        // View direction
-        V = normalize(camPos - fragWorldPos);
-        
-        // Update Depth
-        vec4 clip_pos = projection * vec4(hit_vs, 1.0);
-        gl_FragDepth = (clip_pos.z / clip_pos.w) * 0.5 + 0.5;
+        raytrace_sphere(N, V, fragWorldPos);
     } else {
         N = normalize(Normal);
-        V = normalize(camPos - WorldPos);
+        fragWorldPos = WorldPos;
+        V = normalize(camPos - fragWorldPos);
         // Standard depth is automatically written
         gl_FragDepth = gl_FragCoord.z;
     }
@@ -320,8 +327,8 @@ void main()
     // Multiple Scattering term (Energy Compensation)
     // Approximate Average Fresnel (Favg) for the material
     // For Favg, we can use a simplified fit: F0 + (1-F0)/21
-    vec3 Favg = F0 + (1.0 - F0) / 21.0;
     
+    vec3 Favg = F0 + (1.0 - F0) / 21.0;
     // Ess (Energy Single Scattering) approx from LUT (Scale + Bias)
     // Note: brdf.x/y contain the integrated G * F (without F0) terms, but roughly brdf.x + brdf.y is the directional albedo conservation
     float Ess = brdf.x + brdf.y; 
@@ -349,12 +356,11 @@ void main()
     vec3 ambient    = (kD * diffuse + specular) * ao;
 
     vec3 color = ambient + Lo;
-//    color = kD * diffuse;
 
+    // Exposure
     color *= pbr_exposure;
 
     // HDR tonemapping
-//    color = color / (color + vec3(1.0));
     color = ACESFilm(color);
 
     // gamma correct
@@ -366,8 +372,6 @@ void main()
         FragColor = vec4(Tonemap_DisplayRange(linear_exposed), 1.0);
         return; 
     }
-
-
 
     FragColor = vec4(color, 1.0);
 }
