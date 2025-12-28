@@ -692,7 +692,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         _, self.ui_exposure = imgui.slider_float("Exposure", self.ui_exposure, 1.0, 1.5)
 
         imgui.separator()
-        _, self.ui_use_billboarding = imgui.checkbox("Raytraced Billboards", self.ui_use_billboarding)
+        _, self.ui_use_billboarding = imgui.checkbox(
+            "Raytraced Billboards", self.ui_use_billboarding
+        )
 
         imgui.text("Sphere Mesh (Legacy Settings)")
         changed1, self.ui_sphere_subdivisions = imgui.slider_int(
