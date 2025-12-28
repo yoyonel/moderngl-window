@@ -150,10 +150,14 @@ vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, i
     float distance      = length(lightPosition - pos);
     float attenuation   = 1.0 / (distance * distance);
     vec3 radiance       = lightColor * attenuation;
+    
+    // Clamp roughness for analytical lights to ensure highlights are visible 
+    // and numerically stable even for mirror-like materials.
+    float clampedRoughness = max(roughness, 0.02);
 
     // Cook-Torrance BRDF
-    float NDF = DistributionGGX(N, H, roughness);
-    float G   = GeometrySmith(N, V, L, roughness);
+    float NDF = DistributionGGX(N, H, clampedRoughness);
+    float G   = GeometrySmith(N, V, L, clampedRoughness);
     vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
 
     vec3 numerator    = NDF * G * F;
