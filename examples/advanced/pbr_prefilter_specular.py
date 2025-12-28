@@ -34,13 +34,13 @@ class PBRWithPrefilteredSpecular(CameraWindow):
     """Example Physic Base Rendering with Prefiltered Specular"""
 
     title = "Example Physic Base Rendering with Prefiltered Specular"
-    gl_version = (3, 3)
+    gl_version = (4, 5)
     window_size = 1280, 720
     # window_size = 1920, 1080
     aspect_ratio = None
     resizable = True
     vsync = False
-    samples = 0
+    samples = 8
     resource_dir: Path = (Path(__file__) / "../../resources").resolve()
 
     # exhib some bugs (dark pixel) at around spheres if the size is too low (for example size=32)

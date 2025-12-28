@@ -143,7 +143,7 @@ void main() {
     roughness = texture(textureRoughness, textureCoordinates).r;
 
     // normal
-    vec3 n = normal; // interpolated vertex normal
+    vec3 n = normalize(normal); // interpolated vertex normal
 //    n = calculateNormal(texture(textureNormal, textureCoordinates).rgb);
 
     // ambient occlusion

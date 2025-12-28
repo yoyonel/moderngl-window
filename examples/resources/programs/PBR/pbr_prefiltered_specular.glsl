@@ -192,7 +192,7 @@ vec3 Tonemap_DisplayRange(const vec3 x) {
 // ----------------------------------------------------------------------------
 void main()
 {
-    vec3 N = Normal;
+    vec3 N = normalize(Normal);
     vec3 V = normalize(camPos - WorldPos);
     vec3 R = reflect(-V, N);
 
