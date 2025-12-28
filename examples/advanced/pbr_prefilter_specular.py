@@ -59,7 +59,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.camera.projection.update(near=0.001, far=100)
 
         self.MATERIAL_PRESETS = self._load_material_presets()
-        self.ui_render_mode_options = ["Grid (Metallic/Roughness Interpolation)", "Material Presets"]
+        self.ui_render_mode_options = [
+            "Grid (Metallic/Roughness Interpolation)",
+            "Material Presets",
+        ]
         self.ui_render_mode = 0
         self.ui_show_labels = True
 
@@ -564,9 +567,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                 row = i // cols
                 col = i % cols
                 model = glm.translate(
-                    glm.vec3(
-                        (col - (cols / 2)) * spacing, (row - (rows / 2)) * spacing, 0.0
-                    )
+                    glm.vec3((col - (cols / 2)) * spacing, (row - (rows / 2)) * spacing, 0.0)
                 )
                 self.prog_pbr_lighting["albedo"].value = mat["albedo"]
                 self.prog_pbr_lighting["metallic"].value = mat["metallic"]
@@ -668,12 +669,14 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             )
         imgui.separator()
 
-        _, self.ui_render_mode = imgui.combo("Render Mode", self.ui_render_mode, self.ui_render_mode_options)
+        _, self.ui_render_mode = imgui.combo(
+            "Render Mode", self.ui_render_mode, self.ui_render_mode_options
+        )
         _, self.ui_show_labels = imgui.checkbox("Show Labels", self.ui_show_labels)
 
         if self.ui_render_mode == 0:
             _, self.ui_albedo = imgui.color_edit3("Albedo", self.ui_albedo)
-        
+
         _, self.ui_nr_rows = imgui.slider_int("Number of Rows", self.ui_nr_rows, 1, 10)
         _, self.ui_nr_columns = imgui.slider_int("Number of Columns", self.ui_nr_columns, 1, 10)
         _, self.ui_spacing = imgui.slider_float("Spacing", self.ui_spacing, 1.0, 10.0)
@@ -705,7 +708,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if self.ui_show_labels:
             draw_list = imgui.get_foreground_draw_list()
             spacing = self.ui_spacing
-            
+
             # View-Projection for labels
             mvp = self.camera.projection.matrix * self.camera.matrix
             width, height = self.wnd.size
@@ -719,7 +722,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                         break
                     row = i // cols
                     col = i % cols
-                    world_pos = glm.vec3((col - (cols / 2)) * spacing, (row - (rows / 2)) * spacing, 0.0)
+                    world_pos = glm.vec3(
+                        (col - (cols / 2)) * spacing, (row - (rows / 2)) * spacing, 0.0
+                    )
                     self._draw_label(draw_list, mvp, world_pos, width, height, mat["name"])
             else:
                 # Grid Mode Labels (Roughness / Metallic)
@@ -729,10 +734,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                     m = float(row) / float(nr_rows)
                     for col in range(nr_cols):
                         r = glm.clamp(float(col) / float(nr_cols), 0.05, 1.0)
-                        world_pos = glm.vec3((col - (nr_cols / 2)) * spacing, (row - (nr_rows / 2)) * spacing, 0.0)
+                        world_pos = glm.vec3(
+                            (col - (nr_cols / 2)) * spacing, (row - (nr_rows / 2)) * spacing, 0.0
+                        )
                         label = f"M:{m:.2f} R:{r:.2f}"
-                        # Only show labels for first/last or every few if grid is large to avoid clutter?
-                        # For now, show all if requested.
+                        # Only show labels for first/last or every few if grid is large to
+                        # avoid clutter? For now, show all if requested.
                         self._draw_label(draw_list, mvp, world_pos, width, height, label)
 
         imgui.render()
@@ -741,24 +748,29 @@ class PBRWithPrefilteredSpecular(CameraWindow):
     def _draw_label(self, draw_list, mvp, world_pos, width, height, text):
         # Project to clip space
         clip_pos = mvp * glm.vec4(world_pos, 1.0)
-        
+
         # Check if visible (in front of camera)
         if clip_pos.w > 0:
             # Normalized Device Coordinates (NDC)
             ndc = glm.vec3(clip_pos) / clip_pos.w
-            
+
             # Check if within screen bounds (roughly)
             if -1.0 <= ndc.x <= 1.0 and -1.0 <= ndc.y <= 1.0:
                 # Convert to screen coordinates (Imgui uses pixel coords from top-left)
                 screen_x = (ndc.x + 1.0) * 0.5 * width
                 screen_y = (1.0 - ndc.y) * 0.5 * height
-                
+
                 # Draw centered text slightly below the sphere
                 text_size = imgui.calc_text_size(text)
-                pos = imgui.ImVec2(screen_x - text_size.x * 0.5, screen_y + 35) # Increased offset for labels
-                
+                # Increased offset for labels
+                pos = imgui.ImVec2(screen_x - text_size.x * 0.5, screen_y + 35)
+
                 # Draw shadow for readability
-                draw_list.add_text(imgui.ImVec2(pos.x + 1, pos.y + 1), imgui.get_color_u32(imgui.ImVec4(0, 0, 0, 1)), text)
+                draw_list.add_text(
+                    imgui.ImVec2(pos.x + 1, pos.y + 1),
+                    imgui.get_color_u32(imgui.ImVec4(0, 0, 0, 1)),
+                    text,
+                )
                 draw_list.add_text(pos, imgui.get_color_u32(imgui.ImVec4(1, 1, 1, 1)), text)
 
     def on_mouse_position_event(self, x, y, dx, dy):
