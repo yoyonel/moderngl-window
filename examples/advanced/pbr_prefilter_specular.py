@@ -354,12 +354,6 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         self.ctx.clear(*self.clear_color)
 
-        if self.ui_wireframe_enabled:
-            self.ctx.wireframe = True
-        self.render_spheres(time)
-        if self.ui_wireframe_enabled:
-            self.ctx.wireframe = False
-
         if self.ui_skybox_enabled:
             # Debug Skybox selection
             if self.ui_debug_skybox_id == 0:
@@ -377,7 +371,13 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                     self.prefiltered_specular_map, lod=1.0
                 )  # Show a mip level for prefilter
 
-        assert self.ctx.error == "GL_NO_ERROR", self.ctx.error
+        if self.ui_wireframe_enabled:
+            self.ctx.wireframe = True
+        self.render_spheres(time)
+        if self.ui_wireframe_enabled:
+            self.ctx.wireframe = False
+
+        # assert self.ctx.error == "GL_NO_ERROR", self.ctx.error
 
         self.render_ui()
 
@@ -556,6 +556,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
     def render_spheres(self, time):
         self.prog_pbr_lighting["projection"].write(self.camera.projection.matrix)
         self.prog_pbr_lighting["view"].write(self.camera.matrix)
+        self.prog_pbr_lighting["invView"].write(glm.inverse(self.camera.matrix))
         self.prog_pbr_lighting["camPos"].write(self.camera.position)
         self.prog_pbr_lighting["time"] = time
 
