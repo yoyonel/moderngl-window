@@ -63,8 +63,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             "Grid (Metallic/Roughness Interpolation)",
             "Material Presets",
         ]
-        self.ui_render_mode = 0
-        self.ui_show_labels = True
+        self.ui_render_mode = 1
+        self.ui_show_labels = False
 
         self.wnd.mouse_exclusivity = True
         self.wnd.fullscreen_key = self.wnd.keys.F
@@ -130,17 +130,22 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["ao"] = self.ui_ao
         self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
         self.prog_pbr_lighting["use_billboarding"] = self.ui_use_billboarding
-        
+
         # Light Mode: 0=Point, 1=MRP Spherical, 2=LTC Rectangular
-        self.ui_light_mode_options = ["Point Lights (Legacy)", "Spherical (MRP)", "Rectangular (LTC)"]
-        self.ui_light_mode = 0
+        self.ui_light_mode_options = [
+            "Point Lights (Legacy)",
+            "Spherical (MRP)",
+            "Rectangular (LTC)",
+            "No Light",
+        ]
+        self.ui_light_mode = 3
         self.ui_light_radius = 0.5
         self.ui_rect_light_width = 2.0
         self.ui_rect_light_height = 2.0
-        
+
         self.prog_pbr_lighting["light_mode"] = self.ui_light_mode
         self.prog_pbr_lighting["lightRadius"] = self.ui_light_radius
-        
+
         # Load LTC LUTs
         self.ltc_mat = self._load_ltc_lut("textures/ltc/ltc_mat.bin", (64, 64, 4))
         self.ltc_amp = self._load_ltc_lut("textures/ltc/ltc_amp.bin", (64, 64, 4))
@@ -317,26 +322,23 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         """Load LTC LUT from binary file and create OpenGL texture."""
         resource_path = self.resource_dir / relative_path
         import numpy as np
-        
+
         # Load binary data
-        with open(resource_path, 'rb') as f:
+        with open(resource_path, "rb") as f:
             data = np.frombuffer(f.read(), dtype=np.float32)
-        
+
         # Reshape to expected dimensions
         data = data.reshape(shape)
-        
+
         # Create OpenGL texture
         components = shape[2] if len(shape) == 3 else 1
         texture = self.ctx.texture(
-            size=(shape[1], shape[0]),
-            components=components,
-            data=data.tobytes(),
-            dtype='f4'
+            size=(shape[1], shape[0]), components=components, data=data.tobytes(), dtype="f4"
         )
         texture.filter = moderngl.LINEAR, moderngl.LINEAR
         texture.repeat_x = True
         texture.repeat_y = True
-        
+
         logger.info(f"Loaded LTC LUT: {relative_path} ({shape[0]}x{shape[1]}x{components})")
         return texture
 
@@ -757,7 +759,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             "Light Mode", self.ui_light_mode, self.ui_light_mode_options
         )
         if self.ui_light_mode >= 1:  # MRP or LTC
-            _, self.ui_light_radius = imgui.slider_float("Light Radius/Size", self.ui_light_radius, 0.1, 5.0)
+            _, self.ui_light_radius = imgui.slider_float(
+                "Light Radius/Size", self.ui_light_radius, 0.1, 5.0
+            )
 
         imgui.text("Sphere Mesh (Legacy Settings)")
         changed1, self.ui_sphere_subdivisions = imgui.slider_int(

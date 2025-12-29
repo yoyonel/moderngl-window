@@ -209,9 +209,9 @@ vec3 compute_reflectance(in vec3 lightPosition, in vec3 lightColor, in vec3 N, i
         vec3 lightUp = normalize(cross(lightRight, lightToSurf));
         
         // Apply multi-axis time-based rotation for dynamic effect
-        float angleX = time * 0.3;  // Rotation around lightRight
-        float angleY = time * 0.5;  // Rotation around lightUp
-        float angleZ = time * 0.4;  // Rotation around lightToSurf
+        float angleX = time * 0.3 * 0.0;  // Rotation around lightRight
+        float angleY = time * 0.5 * 0.0;  // Rotation around lightUp
+        float angleZ = time * 0.4 * 1.0;  // Rotation around lightToSurf
         
         // Rotation around X (lightRight axis)
         float cosX = cos(angleX);
@@ -443,8 +443,10 @@ void main()
 
     // apply reflectance equation for each light
     vec3 Lo = vec3(0.0);
-    for (int i = 0; i < 4; ++i) {
-        Lo += compute_reflectance(lightPositions[i], lightColors[i], N, V, R, F0, fragWorldPos);
+    if (light_mode != 3) {  // 3: No Light
+        for (int i = 0; i < 4; ++i) {
+            Lo += compute_reflectance(lightPositions[i], lightColors[i], N, V, R, F0, fragWorldPos);
+        }
     }
 
     // ambient lighting (we now use IBL as the ambient term)
