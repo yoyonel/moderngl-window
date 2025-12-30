@@ -139,12 +139,19 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             "No Light",
         ]
         self.ui_light_mode = 3
-        self.ui_light_radius = 0.5
+        # Exemples d'intensités réalistes :
+        # - Bougie : 12 lumens
+        # - LED domestique : 800-1600 lumens
+        # - Projecteur : 5000-20000 lumens
+        # - Soleil à midi : ~100000 lux (dépend de la surface)
+        self.ui_light_radius = 1.0
+        self.ui_light_intensity = 5000.0  # 5000 lumens (≈ ampoule LED puissante)
         self.ui_rect_light_width = 2.0
         self.ui_rect_light_height = 2.0
 
         self.prog_pbr_lighting["light_mode"] = self.ui_light_mode
         self.prog_pbr_lighting["lightRadius"] = self.ui_light_radius
+        self.prog_pbr_lighting["lightIntensity"] = self.ui_light_intensity
 
         # Load LTC LUTs
         self.ltc_mat = self._load_ltc_lut("textures/ltc/ltc_mat.bin", (64, 64, 4))
@@ -192,6 +199,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self._last_use_billboarding = self.ui_use_billboarding
         self._last_light_mode = self.ui_light_mode
         self._last_light_radius = self.ui_light_radius
+        self._last_light_intensity = self.ui_light_intensity
 
     @classmethod
     def add_arguments(cls, parser):
@@ -590,6 +598,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             self.prog_pbr_lighting["lightRadius"].value = self.ui_light_radius
             self._last_light_radius = self.ui_light_radius
 
+        if self._last_light_intensity != self.ui_light_intensity:
+            self.prog_pbr_lighting["lightIntensity"].value = self.ui_light_intensity
+            self._last_light_intensity = self.ui_light_intensity
+
         self.irradiance_map_cubemap.use(location=0)
         self.prefiltered_specular_map.use(location=1)
         self.brdf_lut_texture.use(location=2)
@@ -762,6 +774,18 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if self.ui_light_mode >= 1:  # MRP or LTC
             _, self.ui_light_radius = imgui.slider_float(
                 "Light Radius/Size", self.ui_light_radius, 0.1, 5.0
+            )
+        if self.ui_light_mode == 2:  # LTC
+            """
+            Valeurs typiques
+            Source              Lumens        lightRadius (hw)
+            Chandelle           12            0.05
+            Ampoule LED         800-1600      0.1
+            Néon industriel     3000-5000     1.0
+            Projecteur cinéma   20000+        0.5-2.0
+            """
+            _, self.ui_light_intensity = imgui.slider_float(
+                "Light Intensity", self.ui_light_intensity, 10.0, 20000.0
             )
 
         imgui.text("Sphere Mesh (Legacy Settings)")

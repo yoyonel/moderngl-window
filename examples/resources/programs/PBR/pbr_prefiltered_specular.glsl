@@ -66,6 +66,7 @@ uniform mat4 invView;
 uniform sampler2D ltc_mat;
 uniform sampler2D ltc_amp;
 uniform float time;
+uniform float lightIntensity;  // Intensité lumineuse en lumens (ou watts)
 
 // material parameters
 uniform vec3 albedo;
@@ -253,10 +254,17 @@ vec3 compute_reflectance(
         vec3 spec = LTC_Evaluate(N, V, pos, Minv, points) * schlick.x;
         vec3 diff = LTC_Evaluate(N, V, pos, mat3(1.0), points);
 
+        // Intensité physique: lumens / (4π × aire)
+        // L'aire de la source rectangulaire est (2×hw)² = 4×hw²
+        float lightArea = 4.0 * hw * hw;
+        float luminousIntensity = lightIntensity / (4.0 * PI * lightArea);
+        
+        // Distance attenuation (optionnel pour area lights, mais utile pour cohérence)
         float dist = length(lightPosition - pos);
-        float atten = 1.0 / max(dist * dist, 1.0);
+        float distAtten = 1.0 / max(dist * dist, 1.0);
 
-        return lightColor * atten * (spec * F0 + diff * albedo * (1.0 - metallic) * INV_PI);
+        return lightColor * luminousIntensity * distAtten * 
+               (spec * F0 + diff * albedo * (1.0 - metallic) * INV_PI);
     }
 
     // -------------------------------------------------------
