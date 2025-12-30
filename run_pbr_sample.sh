@@ -1,1 +1,2 @@
+source .venv/bin/activate
 env __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __VK_LAYER_NV_optimus=NVIDIA_onl vblank_mode=0 __GL_SYNC_TO_VBLANK=0 python examples/advanced/pbr_prefilter_specular.py
