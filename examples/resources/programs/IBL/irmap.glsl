@@ -13,6 +13,7 @@ layout(binding=1, rgba16f) restrict writeonly uniform imageCube irradianceMap;  
 layout(local_size_x=32, local_size_y=32, local_size_z=1) in;
 
 uniform float max_intensity;
+uniform float clamp_threshold;
 
 // Computes the Van Der Corput sequence for quasi-random (low-discrepancy) sampling.
 float VanDerCorput(uint index) {
@@ -88,7 +89,59 @@ vec3 ToWorldSpace(const vec3 v, const vec3 n, const vec3 t, const vec3 b) {
     return t * v.x + b * v.y + n * v.z;
 }
 
-vec3 compute_irradiance_convolution(vec3 N) {
+vec3 soft_clamp_smoothstep(vec3 color) {{
+    float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    
+    // Zone de transition: [threshold, threshold*1.5]
+    float transition_start = clamp_threshold;
+    float transition_end = clamp_threshold * 1.5;
+    
+    if (lum <= transition_start) {{
+        return color;
+    }} else if (lum >= transition_end) {{
+        // Hard clamp au-delà de 1.5x threshold
+        return color * (transition_end / lum);
+    }} else {{
+        // Smoothstep dans la zone de transition
+        float t = (lum - transition_start) / (transition_end - transition_start);
+        float blend = 1.0 - smoothstep(0.0, 1.0, t) * 0.5; // Réduction progressive de 0% à 50%
+        return color * blend;
+    }}
+}}
+
+vec3 compute_irradiance_convolution_with_adaptative_clamp_threshold(vec3 N) {
+    // https://learnopengl.com/code_viewer_gh.php?code=src/6.pbr/2.1.2.ibl_irradiance/2.1.2.irradiance_convolution.fs
+    vec3 irradiance = vec3(0.0);
+
+    // tangent space calculation from origin point
+    vec3 up, right;
+    // Use robust basis construction to avoid Singularity at poles (N = 0,1,0)
+    OrthonormalBasis(N, right, up);
+
+    float sampleDelta = 0.025;
+    float nrSamples = 0.0;
+    for(float phi = 0.0; phi < 2.0 * PI; phi += sampleDelta) {
+        for(float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta) {
+            float weight = cos(theta) * sin(theta);
+
+            // spherical to cartesian (in tangent space)
+            vec3 tangentSample = vec3(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
+            // tangent space to world
+            vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * N;
+
+            vec3 env_color = textureLod(envMap, sampleVec, 0.0).rgb;
+            env_color = soft_clamp_smoothstep(env_color);
+
+            irradiance += env_color * weight;
+
+            nrSamples++;
+        }
+    }
+    irradiance = PI * irradiance * (1.0 / float(nrSamples));
+    return irradiance;
+}
+
+vec3 compute_irradiance_convolution_with_static_clamp_threshold(vec3 N) {
     // https://learnopengl.com/code_viewer_gh.php?code=src/6.pbr/2.1.2.ibl_irradiance/2.1.2.irradiance_convolution.fs
     vec3 irradiance = vec3(0.0);
 
@@ -115,7 +168,7 @@ vec3 compute_irradiance_convolution(vec3 N) {
             
             // Replaces bad tonemapping with proper Clamping to avoid fireflies
             env_color = min(env_color, vec3(max_intensity));
-
+            
             irradiance += env_color * weight;
 
             nrSamples++;
@@ -125,7 +178,7 @@ vec3 compute_irradiance_convolution(vec3 N) {
     return irradiance;
 }
 
-vec3 compute_irradiance_with_corrections(vec3 n) {
+vec3 compute_irradiance_convolution_with_monte_carlo_sampling(vec3 n) {
     vec3 t, b;
     OrthonormalBasis(n, t, b); // Generate the tangent and bitangent for the current direction
     highp vec3 result = vec3(0.0);
@@ -134,7 +187,6 @@ vec3 compute_irradiance_with_corrections(vec3 n) {
         vec2 sampleUV = HammersleySample(i);
         vec3 hemisphereSample = ToWorldSpace(SampleHemisphereCosine(sampleUV), n, t, b);
 
-//        vec3 env_color = texture(envMap, hemisphereSample).rgb;
         // Fix "Orange Peel" artifact for Monte Carlo too: use slight blur/LOD.
         vec3 env_color = textureLod(envMap, hemisphereSample, 3.0).rgb;
 
@@ -162,9 +214,11 @@ void main(void) {
 
     vec3 irradiance = vec3(0.0);
     if (method == 0) {
-        irradiance = compute_irradiance_with_corrections(n);
-    } else {
-        irradiance = compute_irradiance_convolution(n);
+        irradiance = compute_irradiance_convolution_with_monte_carlo_sampling(n);
+    } else if (method == 1) {
+        irradiance = compute_irradiance_convolution_with_static_clamp_threshold(n);
+    } else {    // égale à 2
+        irradiance = compute_irradiance_convolution_with_adaptative_clamp_threshold(n);
     }
 
     // Store the computed irradiance value for the current texel

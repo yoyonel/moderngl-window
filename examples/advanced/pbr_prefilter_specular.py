@@ -13,7 +13,7 @@ import pathlib
 import time
 from pathlib import Path
 from typing import Optional, Callable, Any, Final
-
+import numpy as np
 import OpenEXR
 import glm
 import moderngl
@@ -28,7 +28,166 @@ from moderngl_window.integrations.imgui_bundle import ModernglWindowRenderer
 logger = logging.getLogger("moderngl_window.exemple.pbr_prefilter_specular")
 
 
+class GPULuminanceStats:
+    """
+    Calcule les stats de luminance sur GPU via compute shader
+    Beaucoup plus rapide que NumPy pour grandes textures
+    """
+
+    def __init__(self, ctx: moderngl.Context, resource_dir):
+        self.ctx = ctx
+
+        # Charger le compute shader (créez le fichier programs/IBL/luminance_stats.glsl)
+        self.prog_luminance = self.load_compute_shader_from_file(
+            resource_dir / "programs/IBL/luminance_stats.glsl"
+        )
+
+        self.luminance_buffer = None
+
+    def load_compute_shader_from_file(self, path):
+        """Helper pour charger compute shader depuis fichier"""
+        with open(path, "r") as f:
+            source = f.read()
+        return self.ctx.compute_shader(source)
+
+    def compute_stats(self, hdr_texture: moderngl.Texture, clamp_multiplier: float = 6.0) -> dict:
+        """
+        Calcule statistiques de luminance sur GPU
+
+        Args:
+            hdr_texture: Texture HDR equirectangular
+            clamp_multiplier: Facteur Filament (default: 6.0)
+
+        Returns:
+            dict avec 'mean', 'clamp_threshold', etc.
+        """
+        width, height = hdr_texture.size
+        num_pixels = width * height
+
+        # Créer buffer de sortie (réutilisable)
+        if self.luminance_buffer is None or self.luminance_buffer.size != num_pixels * 4:
+            if self.luminance_buffer:
+                self.luminance_buffer.release()
+            self.luminance_buffer = self.ctx.buffer(reserve=num_pixels * 4)  # 4 bytes par float
+
+        # Bind ressources
+        hdr_texture.use(location=0)
+        self.luminance_buffer.bind_to_storage_buffer(binding=1)
+
+        # Dispatch compute shader
+        # Workgroups: (width/16, height/16, 1)
+        num_groups_x = (width + 15) // 16
+        num_groups_y = (height + 15) // 16
+
+        self.prog_luminance.run(num_groups_x, num_groups_y, 1)
+
+        # Attendre fin du compute
+        self.ctx.finish()
+
+        # Lecture du buffer (copie GPU→CPU, mais beaucoup plus petit que texture originale)
+        luminance_data = np.frombuffer(self.luminance_buffer.read(), dtype=np.float32)
+
+        # Calcul stats CPU (rapide car déjà réduit)
+        # Filtrer valeurs invalides (nan, inf)
+        valid_data = luminance_data[np.isfinite(luminance_data)]
+
+        if len(valid_data) == 0:
+            logger.warning("No valid luminance data, using fallback")
+            return {
+                "mean": 50.0,
+                "median": 50.0,
+                "p95": 100.0,
+                "p99": 150.0,
+                "max": 200.0,
+                "clamp_threshold": 50.0 * clamp_multiplier,
+            }
+
+        mean_lum = float(np.mean(valid_data))
+        clamp_threshold = mean_lum * clamp_multiplier
+
+        stats = {
+            "mean": mean_lum,
+            "median": float(np.median(valid_data)),
+            "p95": float(np.percentile(valid_data, 95)),
+            "p99": float(np.percentile(valid_data, 99)),
+            "max": float(np.max(valid_data)),
+            "clamp_threshold": clamp_threshold,
+        }
+
+        logger.info("=== GPU Luminance Stats (Filament Method) ===")
+        logger.info(f"Mean luminance: {stats['mean']:.2f}")
+        logger.info(f"Median: {stats['median']:.2f}")
+        logger.info(f"95th percentile: {stats['p95']:.2f}")
+        logger.info(f"99th percentile: {stats['p99']:.2f}")
+        logger.info(f"Max: {stats['max']:.2f}")
+        logger.info(f"Clamp multiplier: {clamp_multiplier}x")
+        logger.info(f"→ Clamp threshold: {clamp_threshold:.2f}")
+
+        return stats
+
+    def release(self):
+        """Libérer ressources"""
+        if self.luminance_buffer:
+            self.luminance_buffer.release()
+        if self.prog_luminance:
+            self.prog_luminance.release()
+
+
 # logger.setLevel(logging.DEBUG)
+def compute_luminance_stats(pixels: np.ndarray) -> dict:
+    """
+    Calcule statistiques de luminance d'une HDR environment map
+
+    Args:
+        pixels: Array (height, width, 3+) en HDR float
+
+    Returns:
+        dict avec 'mean', 'median', 'p95', 'p99', 'max'
+    """
+    # Luminance Rec.709
+    luminance = 0.2126 * pixels[:, :, 0] + 0.7152 * pixels[:, :, 1] + 0.0722 * pixels[:, :, 2]
+
+    return {
+        "mean": float(np.mean(luminance)),
+        "median": float(np.median(luminance)),
+        "p95": float(np.percentile(luminance, 95)),
+        "p99": float(np.percentile(luminance, 99)),
+        "max": float(np.max(luminance)),
+        "std": float(np.std(luminance)),
+    }
+
+
+def filament_adaptive_clamp_factor(
+    pixels: np.ndarray, clamp_multiplier: float = 6.0, verbose: bool = True
+) -> float:
+    """
+    Calcule le facteur de clamp adaptatif selon la méthode Filament
+
+    Args:
+        pixels: HDR environment map
+        clamp_multiplier: Facteur multiplicatif (Filament: 6.0, conservateur: 4.0, agressif: 10.0)
+        verbose: Afficher les stats
+
+    Returns:
+        Seuil de clamp calculé automatiquement
+    """
+    stats = compute_luminance_stats(pixels)
+
+    # Méthode Filament: seuil = moyenne × facteur
+    clamp_threshold = stats["mean"] * clamp_multiplier
+
+    if verbose:
+        logger.info("=== Filament Adaptive Clamping ===")
+        logger.info(f"Luminance mean: {stats['mean']:.2f}")
+        logger.info(f"Luminance median: {stats['median']:.2f}")
+        logger.info(f"Luminance 95th percentile: {stats['p95']:.2f}")
+        logger.info(f"Luminance 99th percentile: {stats['p99']:.2f}")
+        logger.info(f"Luminance max: {stats['max']:.2f}")
+        logger.info(f"Clamp multiplier: {clamp_multiplier}x")
+        logger.info(f"→ Clamp threshold: {clamp_threshold:.2f}")
+        logger.info(f"Ratio max/threshold: {stats['max'] / clamp_threshold:.2f}x")
+
+    return clamp_threshold
 
 
 class PBRWithPrefilteredSpecular(CameraWindow):
@@ -41,7 +200,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
     aspect_ratio = None
     resizable = True
     vsync = False
-    samples = 0
+    samples = 8
     resource_dir: Path = (Path(__file__) / "../../resources").resolve()
 
     # exhib some bugs (dark pixel) at around spheres if the size is too low (for example size=32)
@@ -95,6 +254,13 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_equirect2cube = self.load_compute_shader("programs/IBL/equirect2cube.glsl")
         self.prog_spmap = self.load_compute_shader("programs/IBL/spmap.glsl")
         self.prog_irmap = self.load_compute_shader("programs/IBL/irmap.glsl")
+        #
+        self.prog_luminance_pass1 = self.load_compute_shader(
+            "programs/IBL/luminance_reduce_pass1.glsl"
+        )
+        self.prog_luminance_pass2 = self.load_compute_shader(
+            "programs/IBL/luminance_reduce_pass2.glsl"
+        )
 
         # // pbr: generate a (static/constant) 2D LUT from the BRDF equations used.
         self.brdf_lut_texture = self.build_brdf_lut_texture(
@@ -108,11 +274,21 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         ]
         self.ui_hdri_id = 0
 
-        self.ui_irradiance_method_options = ["Monte Carlo (Fast)", "Convolution (Stable)"]
-        self.ui_irradiance_method = 1  # 0: Monte Carlo, 1: Convolution
+        self.ui_irradiance_method_options = [
+            "Monte Carlo (Fast)",
+            "Convolution (Stable)",
+            "Convolution (Average Clamp)",
+        ]
+        self.ui_irradiance_method = (
+            2  # 0: Monte Carlo, 1: Convolution, 2: Convolution (Average Clamp)
+        )
         self.ui_irradiance_clamp = (
             50.0  # Default higher than 1.0 to preserve HDR but limit huge spikes
         )
+        self.clamp_threshold = 50.0
+
+        self.gpu_luminance_stats = GPULuminanceStats(self.ctx, self.resource_dir)
+        self.ui_clamp_multiplier = 6.0  # Default value from Filament
 
         self.elapsed_time = 0.0
         self.precompute_from_hdr_env_map(self.hdri_names[self.ui_hdri_id])
@@ -200,6 +376,42 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self._last_light_mode = self.ui_light_mode
         self._last_light_radius = self.ui_light_radius
         self._last_light_intensity = self.ui_light_intensity
+
+    def compute_mean_luminance_gpu(
+        self, hdr_texture: moderngl.Texture, clamp_multiplier: float = 6.0
+    ) -> float:
+        width, height = hdr_texture.size
+        num_pixels = width * height
+
+        group_x = (width + 15) // 16
+        group_y = (height + 15) // 16
+        num_groups = group_x * group_y
+
+        # Buffers
+        group_buffer = self.ctx.buffer(reserve=num_groups * 4)
+        result_buffer = self.ctx.buffer(reserve=4)
+
+        # PASS 1
+        hdr_texture.use(0)
+        group_buffer.bind_to_storage_buffer(1)
+        self.prog_luminance_pass1.run(group_x, group_y, 1)
+
+        # PASS 2
+        group_buffer.bind_to_storage_buffer(0)
+        result_buffer.bind_to_storage_buffer(1)
+
+        self.prog_luminance_pass2["numGroups"].value = num_groups
+        self.prog_luminance_pass2["numPixels"].value = num_pixels
+
+        self.prog_luminance_pass2.run(1, 1, 1)
+
+        # Lire UN SEUL float (4 bytes)
+        mean = np.frombuffer(result_buffer.read(), dtype=np.float32)[0]
+
+        group_buffer.release()
+        result_buffer.release()
+
+        return float(mean) * clamp_multiplier
 
     @classmethod
     def add_arguments(cls, parser):
@@ -304,7 +516,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         GL.glEndQuery(GL.GL_TIME_ELAPSED)
 
         if wait_for_finish:
-            # logger.info("Wait for all computing commands to finish ...")
+            logger.info("Wait for all computing commands to finish ...")
             self.ctx.finish()
 
         # Retrieve query result
@@ -395,6 +607,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         with OpenEXR.File(path_to_hdr_env_map) as infile:
             channel = list(infile.channels().values())[0]
             nd_pixels = channel.pixels
+            self.hdr_pixels_cache = nd_pixels.astype(np.float32)
             result = self.ctx.texture(
                 size=nd_pixels.shape[:2][::-1],
                 components=nd_pixels.shape[-1],
@@ -440,8 +653,32 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         env_cubemap: moderngl.TextureCube,
         size: int = 32,
         dtype_precision: str = "f2",
+        clamp_multiplier: float = 8.0,
+        compute_adaptive_clamp_factor: bool = True,
     ) -> moderngl.TextureCube:
         """Compute Irradiance Diffuse Map with Compute Shader on CubeMap"""
+        if hasattr(self, "hdr_pixels_cache") and compute_adaptive_clamp_factor:
+            # self.clamp_threshold = filament_adaptive_clamp_factor(
+            #     self.hdr_pixels_cache, clamp_multiplier=clamp_multiplier, verbose=True
+            # )
+            # #########################################################################################################
+            # GPU Luminance Stats
+            # #########################################################################################################
+            # ##################################################
+            # version avec calcul de luminance sur GPU mais calcul des stats (dont mean) sur CPU (avec numpy)
+            # stats = self.gpu_luminance_stats.compute_stats(self.hdr_texture)
+            # self.clamp_threshold = stats['clamp_threshold']
+            # ##################################################
+            # version avec calcul de la moyenne de la luminance totalement sur GPU
+            self.clamp_threshold = self.compute_mean_luminance_gpu(
+                self.hdr_texture, self.ui_clamp_multiplier
+            )
+            # ##################################################
+        else:
+            # Fallback: utiliser une valeur raisonnable
+            self.clamp_threshold = 50.0  # Votre valeur actuelle
+            logger.warning("HDR pixels not cached, using fallback clamp_threshold=50.0")
+
         irradiance_map_texture = self.ctx.texture_cube(
             size=(size, size),
             components=env_cubemap.components,
@@ -466,6 +703,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         # uniform int method; 0: Monte Carlo, 1: Convolution
         self.prog_irmap["method"] = self.ui_irradiance_method
         self.prog_irmap["max_intensity"] = self.ui_irradiance_clamp
+        self.prog_irmap["clamp_threshold"] = self.clamp_threshold
         self.prog_irmap.run(nx, ny, nz)
 
         # RELEASE
@@ -717,26 +955,53 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         changed, self.ui_irradiance_method = imgui.combo(
             "Irradiance Gen Method", self.ui_irradiance_method, self.ui_irradiance_method_options
         )
-        changed_clamp, self.ui_irradiance_clamp = imgui.slider_float(
-            "Irradiance Clamp", self.ui_irradiance_clamp, 1.0, 100.0
-        )
-
-        if changed or changed_clamp:
-            logger.info(
-                f"Regenerating Irradiance Map using "
-                f"{self.ui_irradiance_method_options[self.ui_irradiance_method]} "
-                f"and clamp {self.ui_irradiance_clamp}"
+        if self.ui_irradiance_method != 2:
+            changed_clamp, self.ui_irradiance_clamp = imgui.slider_float(
+                "Irradiance Clamp", self.ui_irradiance_clamp, 1.0, 100.0
             )
-            # Release previous texture to be clean? (not strictily necessary if overwriting,
-            # but good practice if recreating object)
-            if self.irradiance_map_cubemap:
-                self.irradiance_map_cubemap.release()
-            self.irradiance_map_cubemap = self.build_irradiance_cubemap(
-                self.env_cubemap, size=PBRWithPrefilteredSpecular.res_for_irradiance_map
+            if changed or changed_clamp:
+                logger.info(
+                    f"Regenerating Irradiance Map using "
+                    f"{self.ui_irradiance_method_options[self.ui_irradiance_method]} "
+                    f"and clamp {self.ui_irradiance_clamp}"
+                )
+                # Release previous texture to be clean? (not strictily necessary if overwriting,
+                # but good practice if recreating object)
+                if self.irradiance_map_cubemap:
+                    self.irradiance_map_cubemap.release()
+                self.irradiance_map_cubemap = self.build_irradiance_cubemap(
+                    self.env_cubemap,
+                    size=PBRWithPrefilteredSpecular.res_for_irradiance_map,
+                    compute_adaptive_clamp_factor=False,
+                )
+                # Ensure we wait for it to be done if we want to measure time accurately
+                # or avoid glitches
+                self.ctx.finish()
+        else:
+            imgui.text("Adaptive clamp set to: {:.2f}".format(self.clamp_threshold))
+            changed_clamp_multiplier, self.ui_clamp_multiplier = imgui.slider_float(
+                "Adaptive Clamp Multiplier",
+                self.ui_clamp_multiplier,
+                0.1,
+                16,
             )
-            # Ensure we wait for it to be done if we want to measure time accurately
-            # or avoid glitches
-            self.ctx.finish()
+            if changed_clamp_multiplier:
+                logger.info(
+                    f"Regenerating Irradiance Map using adaptive clamp {self.ui_clamp_multiplier}"
+                )
+                # Release previous texture to be clean? (not strictily necessary if overwriting,
+                # but good practice if recreating object)
+                if self.irradiance_map_cubemap:
+                    self.irradiance_map_cubemap.release()
+                self.irradiance_map_cubemap = self.build_irradiance_cubemap(
+                    self.env_cubemap,
+                    size=PBRWithPrefilteredSpecular.res_for_irradiance_map,
+                    compute_adaptive_clamp_factor=True,
+                    clamp_multiplier=self.ui_clamp_multiplier,
+                )
+                # Ensure we wait for it to be done if we want to measure time accurately
+                # or avoid glitches
+                self.ctx.finish()
 
         if imgui.collapsing_header("BRDF LUT"):
             # Inspect BRDF LUT
