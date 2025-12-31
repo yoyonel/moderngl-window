@@ -448,58 +448,108 @@ vec3 Tonemap_DisplayRange(const vec3 x)
 // ----------------------------------------------------------------------------
 void main()
 {
-    vec3 N, V, fragWorldPos;
+    vec3 N;
+    vec3 V;
+    vec3 fragWorldPos;
 
-    // Billboarding avec raytracing de sphère ou géométrie standard
+    // Alpha coverage for analytic AA (default opaque)
+    float coverage = 1.0;
+
+    // ------------------------------------------------------------------------
+    // Geometry evaluation
+    // ------------------------------------------------------------------------
     if (use_billboarding) {
+        // Analytic ray–sphere intersection
         if (!raytrace_sphere(N, V, fragWorldPos)) {
-            discard; // Pas d'intersection avec la sphère
+            discard;
+        }
+
+        // --------------------------------------------------------------------
+        // Analytic edge anti-aliasing (stable version)
+        //
+        // LocalPos is in [-2, 2] because QUAD_SCALE = 2.0
+        // The projected sphere radius in this space is exactly 2.0
+        // --------------------------------------------------------------------
+        const float radius = 2.0; // MUST match QUAD_SCALE
+
+        // Signed distance to sphere edge in billboard plane
+        float edgeDist = radius - length(LocalPos);
+
+        // Screen-space pixel footprint of the implicit edge
+        float edgeWidth = fwidth(edgeDist);
+
+        // Prevent sub-pixel instability at far distance
+        // (critical to avoid shimmering)
+        edgeWidth = max(edgeWidth, 1.0 / 1024.0);
+
+        // Smooth analytic coverage
+        coverage = smoothstep(0.0, edgeWidth, edgeDist);
+
+        // Hard reject only pixels clearly outside
+        if (edgeDist < -edgeWidth) {
+            discard;
         }
     } else {
+        // Standard mesh path
         N = normalize(Normal);
         fragWorldPos = WorldPos;
         V = normalize(camPos - fragWorldPos);
         gl_FragDepth = gl_FragCoord.z;
     }
 
+    // ------------------------------------------------------------------------
+    // Common PBR inputs
+    // ------------------------------------------------------------------------
     vec3 R = reflect(-V, N);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
-    
-    // Optimisation: NdotV calculé une seule fois, réutilisé partout
     float NdotV = max(dot(N, V), 0.0);
 
-    // --- Lights contribution ---
+    // ------------------------------------------------------------------------
+    // Direct lighting
+    // ------------------------------------------------------------------------
     vec3 Lo = vec3(0.0);
+
     if (light_mode != 3) {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; ++i) {
             Lo += compute_reflectance(
-                lightPositions[i], 
-                lightColors[i], 
-                N, V, R, F0, 
+                lightPositions[i],
+                lightColors[i],
+                N,
+                V,
+                R,
+                F0,
                 fragWorldPos,
-                NdotV  // Passé en paramètre pour éviter recalcul
+                NdotV
             );
         }
     }
 
-    // --- Ambient / IBL ---
+    // ------------------------------------------------------------------------
+    // Image-Based Lighting (IBL)
+    // ------------------------------------------------------------------------
     vec3 ambient = compute_IBL_PBR(N, V, R, F0, NdotV);
 
-    // --- Final color ---
+    // ------------------------------------------------------------------------
+    // Final shading
+    // ------------------------------------------------------------------------
     vec3 color = ambient + Lo;
     color *= pbr_exposure;
 
-    // --- Debug: False Color Mode ---
+    // ------------------------------------------------------------------------
+    // Debug visualization (false-color luminance)
+    // ------------------------------------------------------------------------
     if (debug_mode == 1) {
-        FragColor = vec4(Tonemap_DisplayRange(color), 1.0);
+        FragColor = vec4(Tonemap_DisplayRange(color), coverage);
         return;
     }
 
-    // Tonemapping et gamma correction
+    // ------------------------------------------------------------------------
+    // Tonemapping & gamma correction
+    // ------------------------------------------------------------------------
     color = ACESFilm(color);
     color = pow(color, vec3(1.0 / 2.2));
 
-    FragColor = vec4(color, 1.0);
+    FragColor = vec4(color, coverage);
 }
 
 #endif

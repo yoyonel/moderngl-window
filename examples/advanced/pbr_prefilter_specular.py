@@ -800,6 +800,14 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.imgui.register_texture(self.brdf_lut_texture)
 
     def render_spheres(self, time):
+        self.ctx.enable(moderngl.BLEND)
+        self.ctx.blend_func = (
+            moderngl.SRC_ALPHA,
+            moderngl.ONE_MINUS_SRC_ALPHA,
+        )
+        self.ctx.enable(moderngl.DEPTH_TEST)
+        self.ctx.depth_mask = False  # Écriture depth OFF
+
         self.prog_pbr_lighting["projection"].write(self.camera.projection.matrix)
         self.prog_pbr_lighting["view"].write(self.camera.matrix)
         self.prog_pbr_lighting["invView"].write(glm.inverse(self.camera.matrix))
@@ -894,6 +902,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                     self.quad.render(self.prog_pbr_lighting)
                 else:
                     self.sphere.render(self.prog_pbr_lighting)
+        
+        self.ctx.depth_mask = True
+        self.ctx.disable(moderngl.BLEND)
 
     def render_skybox(self, cubemap: moderngl.TextureCube, lod: float = 0.0):
         skybox_cam = self.camera.matrix
