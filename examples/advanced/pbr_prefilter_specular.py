@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional, Callable, Any, Final
 import numpy as np
 import OpenEXR
-import glm
+from pyglm import glm
 import moderngl
 from OpenGL import GL
 from imgui_bundle import imgui
@@ -23,6 +23,7 @@ from imgui_bundle import imgui
 from base import CameraWindow
 from moderngl_window import geometry
 from moderngl_window.integrations.imgui_bundle import ModernglWindowRenderer
+from moderngl_window.opengl.projection import Projection3D
 
 # inherit from moderngl_window root logger
 logger = logging.getLogger("moderngl_window.exemple.pbr_prefilter_specular")
@@ -158,7 +159,7 @@ def compute_luminance_stats(pixels: np.ndarray) -> dict:
 
 
 def filament_adaptive_clamp_factor(
-    pixels: np.ndarray, clamp_multiplier: float = 6.0, verbose: bool = True
+        pixels: np.ndarray, clamp_multiplier: float = 6.0, verbose: bool = True
 ) -> float:
     """
     Calcule le facteur de clamp adaptatif selon la méthode Filament
@@ -190,6 +191,42 @@ def filament_adaptive_clamp_factor(
     return clamp_threshold
 
 
+class InfiniteProjection3D(Projection3D):
+    """Projection matrix with far plane at infinity"""
+
+    def update(
+            self,
+            aspect_ratio: Optional[float] = None,
+            fov: Optional[float] = None,
+            near: Optional[float] = None,
+            far: Optional[float] = None,
+    ) -> None:
+        if aspect_ratio is not None:
+            self._aspect_ratio = aspect_ratio
+        if fov is not None:
+            self._fov = fov
+        if near is not None:
+            self._near = near
+        if far is not None:
+            self._far = far
+
+        # Manual derivation of the infinite perspective matrix
+        # Ref: http://www.songho.ca/opengl/gl_projectionmatrix.html
+        f = 1.0 / np.tan(np.radians(self._fov) / 2.0)
+
+        # GLM matrices are column-major
+        self._matrix = glm.mat4(0.0)
+
+        # no 'far' parameter is used here
+        self._matrix[0][0] = f / self._aspect_ratio
+        self._matrix[1][1] = f
+        self._matrix[2][2] = -1.0
+        self._matrix[2][3] = -1.0
+        self._matrix[3][2] = -2.0 * self._near
+
+        self._matrix_bytes = self._matrix.to_bytes()
+
+
 class PBRWithPrefilteredSpecular(CameraWindow):
     """Example Physic Base Rendering with Prefiltered Specular"""
 
@@ -215,7 +252,11 @@ class PBRWithPrefilteredSpecular(CameraWindow):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.camera.projection.update(near=0.001, far=100)
+        # Remplacer la projection standard par une projection infinie (large far plane)
+        self.camera._projection = InfiniteProjection3D(
+            self.wnd.aspect_ratio, 60.0, 0.1,
+        )
+        self.camera.projection.update(near=0.1)
 
         self.MATERIAL_PRESETS = self._load_material_presets()
         self.ui_render_mode_options = [
@@ -240,9 +281,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             randomization=self.ui_sphere_irregularity,
         )
         self.quad = geometry.quad_2d(size=(2.0, 2.0))
+        self.quad_fs = geometry.quad_2d(size=(2.0, 2.0))
         self.ui_use_billboarding = True
-        # with cubes no black pixels problem, certainly a problem a mesh definition/precision
-        # self.sphere = geometry.cube(size=(2.0, 2.0, 2.0))
 
         self.hdr_texture: Optional[moderngl.Texture] = None
         self.env_cubemap_hires: Optional[moderngl.TextureCube] = None
@@ -336,15 +376,18 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.prog_pbr_lighting["ltc_amp"].value = 4
 
         self.backgroundShader = self.load_program("programs/PBR/background.glsl")
-        self.backgroundShader["environmentMap"].value = 0
-        self.backgroundShader["environmentMap"].value = 0
-        self.backgroundShader["blur_lod"].value = 0.0
-
-        self.backgroundShader["blur_lod"].value = 0.0
+        self.backgroundShader["environmentMap"] = 0
+        self.backgroundShader["blur_lod"] = 0.0
 
         self.ui_nr_rows = 7
         self.ui_nr_columns = 7
         self.ui_spacing = 2.5
+
+        self.ui_use_analytic_aa = True
+        self.ui_use_comparison_mode = False
+        self.ui_comparison_split = 0.5
+        self.ui_aa_width_multiplier = 1.0
+        self.ui_aa_distance_factor = 0.002
 
         # Set up imgui.
         imgui.create_context()
@@ -376,9 +419,15 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self._last_light_mode = self.ui_light_mode
         self._last_light_radius = self.ui_light_radius
         self._last_light_intensity = self.ui_light_intensity
+        self._last_use_analytic_aa = None
+        self._last_use_comparison_mode = None
+        self._last_comparison_split = None
+        self._last_window_size = None
+        self._last_aa_width_multiplier = None
+        self._last_aa_distance_factor = None
 
     def compute_mean_luminance_gpu(
-        self, hdr_texture: moderngl.Texture, clamp_multiplier: float = 6.0
+            self, hdr_texture: moderngl.Texture, clamp_multiplier: float = 6.0
     ) -> float:
         width, height = hdr_texture.size
         num_pixels = width * height
@@ -440,9 +489,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             returned_value = ogl_func(self, *args, **kwargs)
             GL.glEndQuery(GL.GL_TIME_ELAPSED)
             # // wait until the results are available
-            stopTimerAvailable = 0
-            while not stopTimerAvailable:
-                stopTimerAvailable = GL.glGetQueryObjectiv(query, GL.GL_QUERY_RESULT_AVAILABLE)
+            stop_timer_available = 0
+            while not stop_timer_available:
+                stop_timer_available = GL.glGetQueryObjectiv(query, GL.GL_QUERY_RESULT_AVAILABLE)
             # // get query results
             # UNSIGNED INT 32 bits work :-)
             self.elapsed_time = GL.glGetQueryObjectuiv(query, GL.GL_QUERY_RESULT)
@@ -452,23 +501,23 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
     def _release_textures(self):
         for ogl_object in (
-            self.hdr_texture,
-            self.env_cubemap_hires,
-            self.env_cubemap,
-            self.prefiltered_specular_map,
-            self.irradiance_map_cubemap,
+                self.hdr_texture,
+                self.env_cubemap_hires,
+                self.env_cubemap,
+                self.prefiltered_specular_map,
+                self.irradiance_map_cubemap,
         ):
             if ogl_object is not None:
                 ogl_object.release()
-                assert type(ogl_object.mglo) is moderngl.mgl.InvalidObject
+                assert type(ogl_object.mglo) is moderngl.mgl.InvalidObject # noqa
                 ogl_object = None
 
-    # @gl_time_elapsed # Removed decorator to have fine grained profiling
+    # @gl_time_elapsed # Removed decorator to have fine-grained profiling
     def precompute_from_hdr_env_map(
-        self,
-        hdri_name: str,
-        release: bool = True,
-        wait_for_finish: bool = True,
+            self,
+            hdri_name: str,
+            release: bool = True,
+            wait_for_finish: bool = True,
     ):
         if release:
             self._release_textures()
@@ -564,8 +613,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
     def on_render(self, time, frame_time):
         self.average_frame_time = (
-            self.frame_time_decay_factor * self.average_frame_time
-            + (1.0 - self.frame_time_decay_factor) * frame_time
+                self.frame_time_decay_factor * self.average_frame_time
+                + (1.0 - self.frame_time_decay_factor) * frame_time
         )
 
         self.ctx.enable_only(moderngl.DEPTH_TEST)
@@ -620,10 +669,10 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         return result
 
     def build_env_cubemap(
-        self,
-        hdr_texture: moderngl.Texture,
-        size: int = 512,
-        dtype_precision="f2",
+            self,
+            hdr_texture: moderngl.Texture,
+            size: int = 512,
+            dtype_precision="f2",
     ) -> moderngl.TextureCube:
         result = self.ctx.texture_cube(
             size=(size, size),
@@ -649,12 +698,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         return result
 
     def build_irradiance_cubemap(
-        self,
-        env_cubemap: moderngl.TextureCube,
-        size: int = 32,
-        dtype_precision: str = "f2",
-        clamp_multiplier: float = 8.0,
-        compute_adaptive_clamp_factor: bool = True,
+            self,
+            env_cubemap: moderngl.TextureCube,
+            size: int = 32,
+            dtype_precision: str = "f2",
+            clamp_multiplier: float = 8.0,
+            compute_adaptive_clamp_factor: bool = True,
     ) -> moderngl.TextureCube:
         """Compute Irradiance Diffuse Map with Compute Shader on CubeMap"""
         if hasattr(self, "hdr_pixels_cache") and compute_adaptive_clamp_factor:
@@ -713,9 +762,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         return irradiance_map_texture
 
     def build_prefiltered_specular_map(
-        self,
-        env_cubemap: moderngl.TextureCube,
-        dtype_precision: str = "f2",
+            self,
+            env_cubemap: moderngl.TextureCube,
+            dtype_precision: str = "f2",
     ):
         prefiltered_specular_texture = self.ctx.texture_cube(
             size=env_cubemap.size,
@@ -736,9 +785,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         # // pbr: run a quasi monte-carlo simulation on the environment lighting
         # // to create a prefilter (cube)map.
         # // --------------------------------------------------------------------------------------
-        # TODO: integrate into moderngl
         logger.info("Copy 0th mipmap level into destination environment map.")
-        self.ctx.copy_texture_cube(prefiltered_specular_texture, env_cubemap)
+        self.ctx.copy_texture_cube(prefiltered_specular_texture, env_cubemap)  # noqa
         assert self.ctx.error == "GL_NO_ERROR", self.ctx.error
 
         logger.info("Pre-filter rest of the mip chain.")
@@ -770,9 +818,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         return prefiltered_specular_texture
 
     def build_brdf_lut_texture(
-        self,
-        size: int = 512,
-        dtype_precision: str = "f2",
+            self,
+            size: int = 512,
+            dtype_precision: str = "f2",
     ):
         # // pre-allocate enough memory for the LUT texture.
         brdf_lut_texture = self.ctx.texture((size, size), 2, dtype=dtype_precision)
@@ -828,10 +876,33 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         if self._last_albedo != albedo_tuple:
             self.prog_pbr_lighting["material.albedo"].value = albedo_tuple
             self._last_albedo = albedo_tuple
-
         if self._last_ao != self.ui_ao:
             self.prog_pbr_lighting["material.ao"].value = self.ui_ao
             self._last_ao = self.ui_ao
+
+        if self._last_use_analytic_aa != self.ui_use_analytic_aa:
+            self.prog_pbr_lighting["use_analytic_aa"].value = self.ui_use_analytic_aa
+            self._last_use_analytic_aa = self.ui_use_analytic_aa
+
+        if self._last_use_comparison_mode != self.ui_use_comparison_mode:
+            self.prog_pbr_lighting["use_comparison_mode"].value = self.ui_use_comparison_mode
+            self._last_use_comparison_mode = self.ui_use_comparison_mode
+
+        if self._last_comparison_split != self.ui_comparison_split:
+            self.prog_pbr_lighting["comparison_split"].value = self.ui_comparison_split
+            self._last_comparison_split = self.ui_comparison_split
+
+        if self._last_window_size != self.wnd.size:
+            self.prog_pbr_lighting["window_size"].value = self.wnd.size
+            self._last_window_size = self.wnd.size
+
+        if self._last_aa_width_multiplier != self.ui_aa_width_multiplier:
+            self.prog_pbr_lighting["aa_width_multiplier"].value = self.ui_aa_width_multiplier
+            self._last_aa_width_multiplier = self.ui_aa_width_multiplier
+
+        if self._last_aa_distance_factor != self.ui_aa_distance_factor:
+            self.prog_pbr_lighting["aa_distance_factor"].value = self.ui_aa_distance_factor
+            self._last_aa_distance_factor = self.ui_aa_distance_factor
 
         if self._last_use_billboarding != self.ui_use_billboarding:
             self.prog_pbr_lighting["use_billboarding"].value = self.ui_use_billboarding
@@ -908,18 +979,22 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.ctx.disable(moderngl.BLEND)
 
     def render_skybox(self, cubemap: moderngl.TextureCube, lod: float = 0.0):
-        skybox_cam = self.camera.matrix
-        # Purge camera translation
-        skybox_cam[3][0] = 0
-        skybox_cam[3][1] = 0
-        skybox_cam[3][2] = 0
+        # View matrix without translation
+        view = self.camera.matrix
+        view[3][0] = 0
+        view[3][1] = 0
+        view[3][2] = 0
 
-        # self.ctx.disable(moderngl.DEPTH_TEST)
-        self.backgroundShader["m_proj"].write(self.camera.projection.matrix)
-        self.backgroundShader["m_camera"].write(skybox_cam)
+        # Fullscreen ray reconstruction matrix
+        inv_view_proj = glm.inverse(self.camera.projection.matrix * view)
+
+        self.backgroundShader["m_inv_view_proj"].write(inv_view_proj)
         self.backgroundShader["blur_lod"].value = lod
         cubemap.use(location=0)
-        self.cube.render(self.backgroundShader)
+
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.quad_fs.render(self.backgroundShader)
+        self.ctx.enable(moderngl.DEPTH_TEST)
 
     def on_resize(self, width: int, height: int):
         # Calculate aspect ratio directly from arguments to avoid querying window state
@@ -1043,6 +1118,24 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         _, self.ui_use_billboarding = imgui.checkbox(
             "Raytraced Billboards", self.ui_use_billboarding
         )
+        if self.ui_use_billboarding:
+            imgui.indent()
+            _, self.ui_use_analytic_aa = imgui.checkbox("Analytic AA", self.ui_use_analytic_aa)
+            _, self.ui_use_comparison_mode = imgui.checkbox(
+                "Comparison Mode (Split)", self.ui_use_comparison_mode
+            )
+            if self.ui_use_comparison_mode:
+                _, self.ui_comparison_split = imgui.slider_float(
+                    "Split Pos", self.ui_comparison_split, 0.0, 1.0
+                )
+
+            _, self.ui_aa_width_multiplier = imgui.slider_float(
+                "AA Softness", self.ui_aa_width_multiplier, 0.1, 10.0
+            )
+            _, self.ui_aa_distance_factor = imgui.slider_float(
+                "AA Distance Scaling", self.ui_aa_distance_factor, 0.0, 1.0
+            )
+            imgui.unindent()
 
         imgui.separator()
         _, self.ui_light_mode = imgui.combo(

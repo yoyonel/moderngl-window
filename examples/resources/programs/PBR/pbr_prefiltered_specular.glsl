@@ -82,6 +82,12 @@ uniform Material material;
 
 uniform float pbr_exposure;
 uniform int debug_mode;
+uniform bool use_analytic_aa;
+uniform bool use_comparison_mode; // Split screen comparison
+uniform float comparison_split;   // 0.0 to 1.0
+uniform vec2 window_size;
+uniform float aa_width_multiplier;
+uniform float aa_distance_factor;
 
 // IBL
 uniform samplerCube irradianceMap;
@@ -264,12 +270,12 @@ vec3 compute_reflectance(
         // L'aire de la source rectangulaire est (2×hw)² = 4×hw²
         float lightArea = 4.0 * hw * hw;
         float luminousIntensity = light.intensity / (4.0 * PI * lightArea);
-        
+
         // Distance attenuation (optionnel pour area lights, mais utile pour cohérence)
         float dist = length(lightPosition - pos);
         float distAtten = 1.0 / max(dist * dist, 1.0);
 
-        return lightColor * luminousIntensity * distAtten * 
+        return lightColor * luminousIntensity * distAtten *
                (spec * F0 + diff * material.albedo * (1.0 - material.metallic) * INV_PI);
     }
 
@@ -291,10 +297,10 @@ vec3 compute_reflectance(
         float len2 = dot(centerToRay, centerToRay);
         float scale = clamp(light.radius * light.radius / max(len2, EPSILON), 0.0, 1.0);
         vec3 LvecMRP = Lvec + centerToRay * scale;
-        
+
         L = normalize(LvecMRP);
         dist2 = dot(LvecMRP, LvecMRP);
-        
+
         // Ajustement de roughness basé sur la taille angulaire de la lumière
         effectiveRoughness = max(material.roughness, light.radius * inversesqrt(dist2) * 0.5);
     }
@@ -314,12 +320,12 @@ vec3 compute_reflectance(
 
     // Cook-Torrance BRDF
     float NDF = DistributionGGX(NdotH, a2);
-    float G   = GeometrySmith(NdotV, NdotL, effectiveRoughness);
-    vec3 F    = fresnelSchlick(HdotV, F0);
+    float G = GeometrySmith(NdotV, NdotL, effectiveRoughness);
+    vec3 F = fresnelSchlick(HdotV, F0);
 
     // Specular term
     vec3 specular = (NDF * G * F) / max(4.0 * NdotV * NdotL, EPSILON);
-    
+
     // Diffuse term (energy conservation)
     vec3 kD = (1.0 - F) * (1.0 - material.metallic);
 
@@ -351,7 +357,7 @@ vec3 compute_IBL_PBR(vec3 N, vec3 V, vec3 R, vec3 F0, float NdotV)
 
     // Split-sum approximation avec compensation de multiple scattering
     vec3 FssEss = F * brdf.x + brdf.y;
-    
+
     // Average Fresnel pour multiple scattering
     vec3 Favg = F0 + (1.0 - F0) * (1.0 / 21.0);
     float Ess = brdf.x + brdf.y;
@@ -369,6 +375,7 @@ vec3 compute_IBL_PBR(vec3 N, vec3 V, vec3 R, vec3 F0, float NdotV)
 
 // ----------------------------------------------------------------------------
 // Raytrace sphere pour billboarding
+// Modifié pour supporter l'AA analytique (retourne 'true' pour les frôlements)
 bool raytrace_sphere(out vec3 N, out vec3 V, out vec3 fragWorldPos) {
     vec3 O = vec3(0.0);
     vec3 P = CenterVS + vec3(LocalPos, 0.0) * SphereRadius;
@@ -382,26 +389,32 @@ bool raytrace_sphere(out vec3 N, out vec3 V, out vec3 fragWorldPos) {
     float c = dot(C, C) - R * R;
     float delta = b * b - 4.0 * c;
 
-    if (delta < 0.0) return false; // Pas d'intersection
+    // Calcul de la distance d'approche pour l'AA
+    float distToCenterSq = dot(cross(D, CenterVS), cross(D, CenterVS));
+    bool is_near_miss = (distToCenterSq < R * R * 1.05);// Cache un peu plus large pour l'AA
 
-    float t = (-b - sqrt(delta)) * 0.5;
-    if (t < 0.0) return false; // Intersection derrière la caméra
+    if (delta < 0.0 && !is_near_miss) return false;
 
-    // Point d'intersection en view space
+    float t;
+    if (delta >= 0.0) {
+        t = (-b - sqrt(delta)) * 0.5;
+    } else {
+        // Near-miss: projeter sur le plan de la silhouette
+        t = -dot(O - C, D);
+    }
+
+    if (t < 0.0) return false;
+
     vec3 hit_vs = O + t * D;
-    
-    // Normale optimisée: division par rayon au lieu de normalize
-    vec3 normal_vs = (hit_vs - C) / R;
+    vec3 normal_vs = normalize(hit_vs - C);
 
-    // Transformation en world space
     N = normalize(mat3(invView) * normal_vs);
     fragWorldPos = (invView * vec4(hit_vs, 1.0)).xyz;
     V = normalize(camPos - fragWorldPos);
 
-    // Calcul de la profondeur correcte
     vec4 clip_pos = projection * vec4(hit_vs, 1.0);
     gl_FragDepth = clip_pos.z / clip_pos.w * 0.5 + 0.5;
-    
+
     return true;
 }
 
@@ -419,8 +432,8 @@ vec3 ACESFilm(vec3 x)
 
 // ----------------------------------------------------------------------------
 // Luminance helper
-float luminance(vec3 color) { 
-    return dot(color, vec3(0.2126, 0.7152, 0.0722)); 
+float luminance(vec3 color) {
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
 // Debug colors for false-color luminance display
@@ -476,24 +489,41 @@ void main()
         // LocalPos is in [-2, 2] because QUAD_SCALE = 2.0
         // The projected sphere radius in this space is exactly 2.0
         // --------------------------------------------------------------------
-        const float radius = 2.0; // MUST match QUAD_SCALE
+        bool enable_aa = use_analytic_aa;
 
-        // Signed distance to sphere edge in billboard plane
-        float edgeDist = radius - length(LocalPos);
+        // Comparison mode logic: Left side has AA, Right side doesn't (if enabled)
+        if (use_comparison_mode) {
+            float screen_x = gl_FragCoord.x / window_size.x;
+            enable_aa = (screen_x < comparison_split);
+        }
 
-        // Screen-space pixel footprint of the implicit edge
-        float edgeWidth = fwidth(edgeDist);
+        if (enable_aa) {
+            const float radius = 1.0;
 
-        // Prevent sub-pixel instability at far distance
-        // (critical to avoid shimmering)
-        edgeWidth = max(edgeWidth, 1.0 / 1024.0);
+            // Signed distance to sphere edge in billboard plane
+            float edgeDist = radius - length(LocalPos);
 
-        // Smooth analytic coverage
-        coverage = smoothstep(0.0, edgeWidth, edgeDist);
+            // Screen-space pixel footprint of the implicit edge
+            // Réglable via aa_width_multiplier et aa_distance_factor
+            float dist = length(CenterVS);
+            float edgeWidth = fwidth(edgeDist) * (aa_width_multiplier + dist * aa_distance_factor);
 
-        // Hard reject only pixels clearly outside
-        if (edgeDist < -edgeWidth) {
-            discard;
+            // Prevent sub-pixel instability at far distance
+            edgeWidth = max(edgeWidth, 1.0 / 1024.0);
+
+            // Smooth analytic coverage
+            coverage = smoothstep(-edgeWidth, edgeWidth, edgeDist);
+
+            // Hard reject only pixels clearly outside the transition zone
+            if (edgeDist < -edgeWidth) {
+                discard;
+            }
+        } else {
+            // No AA: Hard edge at radius 1.0 (LocalPos scaling)
+            if (length(LocalPos) > 1.0) {
+                discard;
+            }
+            coverage = 1.0;
         }
     } else {
         // Standard mesh path
