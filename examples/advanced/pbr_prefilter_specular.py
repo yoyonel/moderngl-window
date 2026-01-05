@@ -302,8 +302,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.ui_albedo = [0.50, 0.50, 0.50]
         self.ui_ao = 1.0
         self.ui_exposure = 1.2
-        self.prog_pbr_lighting["albedo"] = self.ui_albedo
-        self.prog_pbr_lighting["ao"] = self.ui_ao
+        self.prog_pbr_lighting["material.albedo"] = self.ui_albedo
+        self.prog_pbr_lighting["material.ao"] = self.ui_ao
         self.prog_pbr_lighting["pbr_exposure"] = self.ui_exposure
         self.prog_pbr_lighting["use_billboarding"] = self.ui_use_billboarding
 
@@ -326,8 +326,8 @@ class PBRWithPrefilteredSpecular(CameraWindow):
         self.ui_rect_light_height = 2.0
 
         self.prog_pbr_lighting["light_mode"] = self.ui_light_mode
-        self.prog_pbr_lighting["lightRadius"] = self.ui_light_radius
-        self.prog_pbr_lighting["lightIntensity"] = self.ui_light_intensity
+        self.prog_pbr_lighting["light.radius"] = self.ui_light_radius
+        self.prog_pbr_lighting["light.intensity"] = self.ui_light_intensity
 
         # Load LTC LUTs
         self.ltc_mat = self._load_ltc_lut("textures/ltc/ltc_mat.bin", (64, 64, 4))
@@ -661,11 +661,12 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             # self.clamp_threshold = filament_adaptive_clamp_factor(
             #     self.hdr_pixels_cache, clamp_multiplier=clamp_multiplier, verbose=True
             # )
-            # #########################################################################################################
+            # #########################################################################
             # GPU Luminance Stats
-            # #########################################################################################################
+            # #########################################################################
             # ##################################################
-            # version avec calcul de luminance sur GPU mais calcul des stats (dont mean) sur CPU (avec numpy)
+            # version avec calcul de luminance sur GPU mais calcul des stats
+            # (dont mean) sur CPU (avec numpy)
             # stats = self.gpu_luminance_stats.compute_stats(self.hdr_texture)
             # self.clamp_threshold = stats['clamp_threshold']
             # ##################################################
@@ -825,11 +826,11 @@ class PBRWithPrefilteredSpecular(CameraWindow):
 
         albedo_tuple = tuple(self.ui_albedo)
         if self._last_albedo != albedo_tuple:
-            self.prog_pbr_lighting["albedo"].value = albedo_tuple
+            self.prog_pbr_lighting["material.albedo"].value = albedo_tuple
             self._last_albedo = albedo_tuple
 
         if self._last_ao != self.ui_ao:
-            self.prog_pbr_lighting["ao"].value = self.ui_ao
+            self.prog_pbr_lighting["material.ao"].value = self.ui_ao
             self._last_ao = self.ui_ao
 
         if self._last_use_billboarding != self.ui_use_billboarding:
@@ -841,11 +842,11 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             self._last_light_mode = self.ui_light_mode
 
         if self._last_light_radius != self.ui_light_radius:
-            self.prog_pbr_lighting["lightRadius"].value = self.ui_light_radius
+            self.prog_pbr_lighting["light.radius"].value = self.ui_light_radius
             self._last_light_radius = self.ui_light_radius
 
         if self._last_light_intensity != self.ui_light_intensity:
-            self.prog_pbr_lighting["lightIntensity"].value = self.ui_light_intensity
+            self.prog_pbr_lighting["light.intensity"].value = self.ui_light_intensity
             self._last_light_intensity = self.ui_light_intensity
 
         self.irradiance_map_cubemap.use(location=0)
@@ -860,14 +861,14 @@ class PBRWithPrefilteredSpecular(CameraWindow):
             nr_columns = self.ui_nr_columns
             spacing = self.ui_spacing
             for row in range(nr_rows):
-                self.prog_pbr_lighting["metallic"].value = float(row) / float(nr_rows)
+                self.prog_pbr_lighting["material.metallic"].value = float(row) / float(nr_rows)
                 for col in range(nr_columns):
                     model = glm.translate(
                         glm.vec3(
                             (col - (nr_columns / 2)) * spacing, (row - (nr_rows / 2)) * spacing, 0.0
                         )
                     )
-                    self.prog_pbr_lighting["roughness"].value = glm.clamp(
+                    self.prog_pbr_lighting["material.roughness"].value = glm.clamp(
                         float(col) / float(nr_columns), 0.05, 1.0
                     )
                     self.prog_pbr_lighting["model"].write(model)
@@ -891,9 +892,9 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                 model = glm.translate(
                     glm.vec3((col - (cols / 2)) * spacing, (row - (rows / 2)) * spacing, 0.0)
                 )
-                self.prog_pbr_lighting["albedo"].value = mat["albedo"]
-                self.prog_pbr_lighting["metallic"].value = mat["metallic"]
-                self.prog_pbr_lighting["roughness"].value = mat["roughness"]
+                self.prog_pbr_lighting["material.albedo"].value = mat["albedo"]
+                self.prog_pbr_lighting["material.metallic"].value = mat["metallic"]
+                self.prog_pbr_lighting["material.roughness"].value = mat["roughness"]
                 self.prog_pbr_lighting["model"].write(model)
                 self.prog_pbr_lighting["normalMatrix"].write(
                     glm.transpose(glm.inverse(glm.mat3(model)))
@@ -902,7 +903,7 @@ class PBRWithPrefilteredSpecular(CameraWindow):
                     self.quad.render(self.prog_pbr_lighting)
                 else:
                     self.sphere.render(self.prog_pbr_lighting)
-        
+
         self.ctx.depth_mask = True
         self.ctx.disable(moderngl.BLEND)
 

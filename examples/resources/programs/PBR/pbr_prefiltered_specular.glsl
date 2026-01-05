@@ -57,7 +57,6 @@ in vec3 CenterVS;
 
 uniform bool use_billboarding;
 uniform int light_mode;  // 0=Point, 1=MRP Spherical, 2=LTC Rectangular
-uniform float lightRadius;
 uniform mat4 projection;
 uniform mat4 view;
 uniform mat4 invView;
@@ -66,13 +65,20 @@ uniform mat4 invView;
 uniform sampler2D ltc_mat;
 uniform sampler2D ltc_amp;
 uniform float time;
-uniform float lightIntensity;  // Intensité lumineuse en lumens (ou watts)
 
-// material parameters
-uniform vec3 albedo;
-uniform float metallic;
-uniform float roughness;
-uniform float ao;
+struct Light {
+    float radius;
+    float intensity;
+};
+uniform Light light;
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float ao;
+};
+uniform Material material;
 
 uniform float pbr_exposure;
 uniform int debug_mode;
@@ -232,7 +238,7 @@ vec3 compute_reflectance(
         vec3 finalRight = rotatedRight * cosZ + tempUp * sinZ;
         vec3 finalUp    = -rotatedRight * sinZ + tempUp * cosZ;
 
-        float hw = lightRadius;
+        float hw = light.radius;
         vec3 points[4];
         points[0] = lightPosition + (-finalRight - finalUp) * hw;
         points[1] = lightPosition + ( finalRight - finalUp) * hw;
@@ -240,7 +246,7 @@ vec3 compute_reflectance(
         points[3] = lightPosition + (-finalRight + finalUp) * hw;
 
         float theta = acos(NdotV);
-        vec2 uv = vec2(roughness, theta * (2.0 * INV_PI)); // Optimisé: 2/PI
+        vec2 uv = vec2(material.roughness, theta * (2.0 * INV_PI)); // Optimisé: 2/PI
 
         vec4 t = texture(ltc_mat, uv);
         mat3 Minv = mat3(
@@ -257,14 +263,14 @@ vec3 compute_reflectance(
         // Intensité physique: lumens / (4π × aire)
         // L'aire de la source rectangulaire est (2×hw)² = 4×hw²
         float lightArea = 4.0 * hw * hw;
-        float luminousIntensity = lightIntensity / (4.0 * PI * lightArea);
+        float luminousIntensity = light.intensity / (4.0 * PI * lightArea);
         
         // Distance attenuation (optionnel pour area lights, mais utile pour cohérence)
         float dist = length(lightPosition - pos);
         float distAtten = 1.0 / max(dist * dist, 1.0);
 
         return lightColor * luminousIntensity * distAtten * 
-               (spec * F0 + diff * albedo * (1.0 - metallic) * INV_PI);
+               (spec * F0 + diff * material.albedo * (1.0 - material.metallic) * INV_PI);
     }
 
     // -------------------------------------------------------
@@ -275,22 +281,22 @@ vec3 compute_reflectance(
     float invDist = inversesqrt(dist2); // Optimisation: évite normalize explicite
     vec3 L = Lvec * invDist;
 
-    float effectiveRoughness = roughness;
+    float effectiveRoughness = material.roughness;
 
-    if (light_mode == 1 && lightRadius > 0.0)
+    if (light_mode == 1 && light.radius > 0.0)
     {
         // Most Representative Point (MRP) pour lumières sphériques
         vec3 proj = dot(Lvec, R) * R;
         vec3 centerToRay = proj - Lvec;
         float len2 = dot(centerToRay, centerToRay);
-        float scale = clamp(lightRadius * lightRadius / max(len2, EPSILON), 0.0, 1.0);
+        float scale = clamp(light.radius * light.radius / max(len2, EPSILON), 0.0, 1.0);
         vec3 LvecMRP = Lvec + centerToRay * scale;
         
         L = normalize(LvecMRP);
         dist2 = dot(LvecMRP, LvecMRP);
         
         // Ajustement de roughness basé sur la taille angulaire de la lumière
-        effectiveRoughness = max(roughness, lightRadius * inversesqrt(dist2) * 0.5);
+        effectiveRoughness = max(material.roughness, light.radius * inversesqrt(dist2) * 0.5);
     }
 
     // Atténuation inverse carré
@@ -315,9 +321,9 @@ vec3 compute_reflectance(
     vec3 specular = (NDF * G * F) / max(4.0 * NdotV * NdotL, EPSILON);
     
     // Diffuse term (energy conservation)
-    vec3 kD = (1.0 - F) * (1.0 - metallic);
+    vec3 kD = (1.0 - F) * (1.0 - material.metallic);
 
-    return (kD * albedo * INV_PI + specular) * radiance * NdotL;
+    return (kD * material.albedo * INV_PI + specular) * radiance * NdotL;
 }
 
 // ----------------------------------------------------------------------------
@@ -325,20 +331,20 @@ vec3 compute_reflectance(
 vec3 compute_IBL_PBR(vec3 N, vec3 V, vec3 R, vec3 F0, float NdotV)
 {
     // Fresnel pour IBL
-    vec3 F = fresnelSchlickRoughness(NdotV, F0, roughness);
+    vec3 F = fresnelSchlickRoughness(NdotV, F0, material.roughness);
     vec3 kS = F;
-    vec3 kD = (1.0 - kS) * (1.0 - metallic);
+    vec3 kD = (1.0 - kS) * (1.0 - material.metallic);
 
     // Diffuse IBL
     vec3 irradiance = texture(irradianceMap, N).rgb;
-    vec3 diffuse = irradiance * albedo;
+    vec3 diffuse = irradiance * material.albedo;
 
     // Specular IBL avec prefiltered environment map
     const float MAX_REFLECTION_LOD = float(textureQueryLevels(prefilterMap)) - 1.0;
-    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb;
+    vec3 prefilteredColor = textureLod(prefilterMap, R, material.roughness * MAX_REFLECTION_LOD).rgb;
 
     // BRDF LUT lookup avec correction de coordonnées pour éviter artifacts aux bords
-    vec2 brdfUV = vec2(NdotV, roughness);
+    vec2 brdfUV = vec2(NdotV, material.roughness);
     vec2 texSize = vec2(textureSize(brdfLUT, 0));
     brdfUV = brdfUV * (texSize - 1.0) / texSize + 0.5 / texSize;
     vec2 brdf = texture(brdfLUT, brdfUV).rg;
@@ -355,9 +361,9 @@ vec3 compute_IBL_PBR(vec3 N, vec3 V, vec3 R, vec3 F0, float NdotV)
     vec3 specular = prefilteredColor * (FssEss + multipleScattering);
 
     // Energy conservation finale
-    kD = (1.0 - (FssEss + multipleScattering)) * (1.0 - metallic);
+    kD = (1.0 - (FssEss + multipleScattering)) * (1.0 - material.metallic);
 
-    vec3 ambient = (kD * diffuse + specular) * ao;
+    vec3 ambient = (kD * diffuse + specular) * material.ao;
     return ambient;
 }
 
@@ -501,7 +507,7 @@ void main()
     // Common PBR inputs
     // ------------------------------------------------------------------------
     vec3 R = reflect(-V, N);
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F0 = mix(vec3(0.04), material.albedo, material.metallic);
     float NdotV = max(dot(N, V), 0.0);
 
     // ------------------------------------------------------------------------
